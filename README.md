@@ -39,13 +39,21 @@ cd content && cargo horizon-mod build
 cd native && cargo test
 ```
 
-Сборка в игру — так же, как у официальных модов Horizon. Из клона [horizon-mods](https://github.com/horizon-rust/horizon-mods), если этот каталог лежит как `native/minecolonies`:
+Проверка бандла — та, что описана в руководстве Horizon. `native.py` из клона [horizon-mods](https://github.com/horizon-rust/horizon-mods) ищет мод как `native/<имя>`:
 
 ```sh
-python3 native/tools/native.py check minecolonies
+git clone https://github.com/horizon-rust/horizon-mods
+ln -s /path/to/this/repo/native horizon-mods/native/minecolonies
+python3 horizon-mods/native/tools/native.py check minecolonies
 ```
 
-Либо укажите лаунчеру папку `native/mixins/minecolonies` и соберите с `--trust-native-code`. Мод рассчитан на Horizon с `NATIVE_HOOKS_API` не ниже 413 и проверен по ревизии `c98a51a664c8ce8ec166ecedd85bb47b3687b336`. Пока правите код, в лаунчере удобнее профиль Dev build: игра собирается быстрее.
+В игре лаунчер собирает папку бандла:
+
+```sh
+horizon-launcher native-build /path/to/this/repo/native/mixins/minecolonies --trust-native-code
+```
+
+Мод рассчитан на Horizon с `NATIVE_HOOKS_API` не ниже 413, ревизия `c98a51a664c8ce8ec166ecedd85bb47b3687b336`. Пока правите код, в лаунчере удобнее профиль Dev build: игра собирается быстрее.
 
 Оба мода нужны вместе. Контент даёт блоки и предметы. Нативный мод ведёт колонию, чат и защиту территории. Колония пишется в `<мир>/minecolonies/colony.json`.
 

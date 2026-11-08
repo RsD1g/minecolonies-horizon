@@ -5,5 +5,5 @@ fn minecolonies_stopping(game: &mut crate::game::Game<'_>, dedicated: bool) {
     if !game.native_on(m::ID) {
         return;
     }
-    minecolonies_store(game);
+    m::save_now(game.native_world_dir().as_deref());
 }

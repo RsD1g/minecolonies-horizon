@@ -1,9 +1,9 @@
-//! MineColonies for Horizon. This file is the mod's library (`cargo test`)
-//! and the module the bundle adds to the game as `crate::game::minecolonies`.
-//!
-//! The Java mod does not run in Horizon. What lives here is the colony itself:
-//! claims, blueprints, the warehouse, jobs, research and raids. The hook
-//! files around it only apply that to the world.
+// MineColonies for Horizon. This file is the mod's library (`cargo test`)
+// and the module the bundle adds to the game as `crate::game::minecolonies`.
+//
+// The Java mod does not run in Horizon. What lives here is the colony itself:
+// claims, blueprints, the warehouse, jobs, research and raids. Each hook file
+// is one function; it only applies this module to the world.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,7 +14,7 @@ pub const ID: &str = "minecolonies";
 pub const VERSION: &str = "0.1.0";
 pub const NAME: &str = "MineColonies";
 pub const DESCRIPTION: &str =
-    "Found a colony, raise its huts, and put citizens to work. A Horizon port of the MineColonies founding loop.";
+    "Found a colony, raise its huts, and put citizens to work. An independent colony loop for Horizon.";
 
 pub const OVERWORLD: &str = "minecraft:overworld";
 const SAVE_VERSION: u32 = 1;
@@ -75,6 +75,81 @@ pub fn reset_world() {
 
 pub fn with_world<R>(f: impl FnOnce(&mut World) -> R) -> R {
     LIVE.with(|live| f(&mut live.borrow_mut()))
+}
+
+fn colony_file(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join("minecolonies").join("colony.json")
+}
+
+/// Read `{world}/minecolonies/colony.json` the first time this thread needs it.
+pub fn ensure_loaded(dir: Option<&std::path::Path>) {
+    if world_ready() {
+        return;
+    }
+    let text = dir.and_then(|dir| std::fs::read_to_string(colony_file(dir)).ok());
+    load_saved(text.as_deref());
+}
+
+/// Write the colony next to the world, when this thread has one open.
+pub fn save_now(dir: Option<&std::path::Path>) {
+    if !world_ready() {
+        return;
+    }
+    let Some(dir) = dir else {
+        return;
+    };
+    let path = colony_file(dir);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let text = with_world(|world| world.to_json());
+    if std::fs::write(path, text).is_ok() {
+        with_world(|world| world.mark_saved());
+    }
+}
+
+pub fn save_and_drop(dir: Option<&std::path::Path>) {
+    save_now(dir);
+    reset_world();
+}
+
+pub fn actor_of(uuid: u128, name: &str, dimension: &str, position: [f64; 3], yaw: f32) -> Actor {
+    Actor {
+        uuid,
+        name: name.to_owned(),
+        dimension: dimension.to_owned(),
+        x: position[0].floor() as i32,
+        y: position[1].floor() as i32,
+        z: position[2].floor() as i32,
+        yaw,
+    }
+}
+
+/// What a right-click with one of our items should do. The hook applies it.
+pub enum Held {
+    Ignore,
+    Tool,
+    Camp { lines: Vec<String>, consume: bool },
+}
+
+pub fn held(actor: &Actor, item: &str, clicked: Option<([i32; 3], [i32; 3])>) -> Held {
+    if item == "minecolonies:buildtool" {
+        return Held::Tool;
+    }
+    if item != "minecolonies:supplycamp" {
+        return Held::Ignore;
+    }
+    let (door, rot) = match clicked {
+        Some((door, face)) => (door, rot_from_face(face, actor.yaw)),
+        None => door_ahead(actor, 5),
+    };
+    let had = with_world(|world| world.colonies_owned(actor.uuid));
+    let reply = with_world(|world| world.found_at(actor, "", door, rot));
+    let has = with_world(|world| world.colonies_owned(actor.uuid));
+    Held::Camp {
+        lines: reply.lines,
+        consume: !had && has,
+    }
 }
 
 pub fn command_usages() -> &'static [&'static str] {
@@ -2448,6 +2523,27 @@ mod tests {
         assert_eq!(world.colonies.len(), 1);
         world.command(&actor(7, 0, 0), "colony abandon confirm");
         assert!(world.colonies.is_empty());
+    }
+
+    #[test]
+    fn the_world_folder_keeps_the_colony() {
+        let dir = std::env::temp_dir().join(format!("minecolonies-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        reset_world();
+        ensure_loaded(Some(&dir));
+        let player = actor(9, 0, 0);
+        with_world(|world| {
+            world.set_lang(Lang::Ru);
+            let _ = world.command(&player, "colony found Река");
+        });
+        save_and_drop(Some(&dir));
+        assert!(!world_ready());
+        ensure_loaded(Some(&dir));
+        let saved = with_world(|world| world.to_json());
+        assert!(saved.contains("Река"), "{saved}");
+        reset_world();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -13,7 +13,7 @@ fn minecolonies_guard(
     let Some(player) = game.native_acting_player() else {
         return;
     };
-    minecolonies_load(game);
+    m::ensure_loaded(game.native_world_dir().as_deref());
     let message = m::with_world(|world| world.protect(&player.dimension, pos, player.uuid));
     if let Some(message) = message {
         *canceled = true;

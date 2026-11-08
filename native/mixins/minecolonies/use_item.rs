@@ -4,53 +4,44 @@ fn minecolonies_use_item(
     stack: &horizon_client::items::ItemStack,
     claimed: &mut bool,
 ) {
-    minecolonies_hold(game, stack, claimed, None);
-}
-
-fn minecolonies_hold(
-    game: &mut crate::game::Game<'_>,
-    stack: &horizon_client::items::ItemStack,
-    claimed: &mut bool,
-    clicked: Option<([i32; 3], [i32; 3])>,
-) {
     use crate::game::minecolonies as m;
     if !game.native_on(m::ID) || *claimed {
         return;
     }
-    let item = &*stack.item;
-    let supply = item == "minecolonies:supplycamp";
-    let tool = item == "minecolonies:buildtool";
-    if !supply && !tool {
-        return;
-    }
-    *claimed = true;
     let Some(player) = game.native_acting_player() else {
         return;
     };
-    minecolonies_load(game);
-    minecolonies_sync_lang(game);
-    let actor = minecolonies_actor(&player);
-    if tool {
-        let _ = game.native_action_bar(
-            actor.uuid,
-            horizon_client::text::Text::literal("/colony build <hut>  ·  /colony help"),
-        );
-        return;
-    }
-    let (door, rot) = match clicked {
-        Some((door, face)) => (door, m::rot_from_face(face, actor.yaw)),
-        None => m::door_ahead(&actor, 5),
-    };
-    let had = m::with_world(|world| world.colonies_owned(actor.uuid));
-    let reply = m::with_world(|world| world.found_at(&actor, "", door, rot));
-    let has = m::with_world(|world| world.colonies_owned(actor.uuid));
-    if !had && has {
-        let _ = game.native_take_items("minecolonies:supplycamp", 1);
-    }
-    for line in reply.lines {
-        game.native_feedback(horizon_client::text::Text::literal(line));
-    }
-    if m::with_world(|world| world.is_dirty()) {
-        minecolonies_store(game);
+    let dir = game.native_world_dir();
+    m::ensure_loaded(dir.as_deref());
+    let lang = m::Lang::parse(game.native_setting(m::ID, "lang").as_deref());
+    m::with_world(|world| world.set_lang(lang));
+    let actor = m::actor_of(
+        player.uuid,
+        &player.name,
+        &player.dimension,
+        player.position,
+        player.yaw,
+    );
+    match m::held(&actor, &stack.item, None) {
+        m::Held::Ignore => {}
+        m::Held::Tool => {
+            *claimed = true;
+            let _ = game.native_action_bar(
+                actor.uuid,
+                horizon_client::text::Text::literal("/colony build <hut>  ·  /colony help"),
+            );
+        }
+        m::Held::Camp { lines, consume } => {
+            *claimed = true;
+            if consume {
+                let _ = game.native_take_items("minecolonies:supplycamp", 1);
+            }
+            for line in lines {
+                game.native_feedback(horizon_client::text::Text::literal(line));
+            }
+            if m::with_world(|world| world.is_dirty()) {
+                m::save_now(dir.as_deref());
+            }
+        }
     }
 }

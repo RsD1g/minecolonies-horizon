@@ -91,10 +91,12 @@ def main():
                     "type": "minecraft:block",
                     "pools": [
                         {
+                            "condition": {"type": "minecraft:survives_explosion"},
                             "rolls": 1,
                             "entries": [{"type": "minecraft:item", "name": f"minecolonies:{block}"}],
                         }
                     ],
+                    "random_sequence": f"minecolonies:blocks/{block}",
                 },
                 indent=2,
             ),
@@ -129,7 +131,7 @@ def main():
 
     write(
         "data/minecraft/tags/block/mineable/axe.json",
-        json.dumps({"replace": False, "values": [f"minecolonies:{block}" for block in HUTS]}, indent=2),
+        json.dumps({"values": [f"minecolonies:{block}" for block in HUTS]}, indent=2),
     )
     for item, template, rarity, en_name, ru_name in (
         ("supplycamp", "minecraft:paper", "uncommon", "Supply Camp", "Лагерь снабжения"),
@@ -164,6 +166,7 @@ def main():
         json.dumps(
             {
                 "type": "minecraft:crafting_shapeless",
+                "category": "misc",
                 "ingredients": ["minecraft:chest", "minecraft:bread", "minecraft:oak_log"],
                 "result": {"id": "minecolonies:supplycamp", "count": 1},
             },
@@ -175,6 +178,7 @@ def main():
         json.dumps(
             {
                 "type": "minecraft:crafting_shaped",
+                "category": "equipment",
                 "pattern": ["G", "S"],
                 "key": {"G": "minecraft:gold_ingot", "S": "minecraft:stick"},
                 "result": {"id": "minecolonies:buildtool", "count": 1},

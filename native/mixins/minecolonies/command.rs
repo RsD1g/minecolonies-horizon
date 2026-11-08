@@ -17,9 +17,17 @@ fn minecolonies_command(
     {
         return;
     }
-    minecolonies_load(game);
-    minecolonies_sync_lang(game);
-    let actor = minecolonies_actor(player);
+    let dir = game.native_world_dir();
+    m::ensure_loaded(dir.as_deref());
+    let lang = m::Lang::parse(game.native_setting(m::ID, "lang").as_deref());
+    m::with_world(|world| world.set_lang(lang));
+    let actor = m::actor_of(
+        player.uuid,
+        &player.name,
+        &player.dimension,
+        player.position,
+        player.yaw,
+    );
     let reply = m::with_world(|world| world.command(&actor, command));
     if !reply.handled {
         return;
@@ -65,6 +73,6 @@ fn minecolonies_command(
         game.native_feedback(horizon_client::text::Text::literal(line));
     }
     if m::with_world(|world| world.is_dirty()) {
-        minecolonies_store(game);
+        m::save_now(game.native_world_dir().as_deref());
     }
 }

@@ -2,6 +2,9 @@
   "type": "minecraft:block",
   "pools": [
     {
+      "condition": {
+        "type": "minecraft:survives_explosion"
+      },
       "rolls": 1,
       "entries": [
         {
@@ -10,5 +13,6 @@
         }
       ]
     }
-  ]
+  ],
+  "random_sequence": "minecolonies:blocks/blockhutbuilder"
 }
