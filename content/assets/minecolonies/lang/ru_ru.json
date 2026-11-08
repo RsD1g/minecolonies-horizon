@@ -1,0 +1,15 @@
+{
+  "block.minecolonies.blockhuttownhall": "Ратуша",
+  "block.minecolonies.blockhutbuilder": "Хижина строителя",
+  "block.minecolonies.blockhutwarehouse": "Склад",
+  "block.minecolonies.blockhutcitizen": "Дом",
+  "block.minecolonies.blockhutfarmer": "Ферма",
+  "block.minecolonies.blockhutlumberjack": "Хижина дровосека",
+  "block.minecolonies.blockhutminer": "Шахта",
+  "block.minecolonies.blockhutguardtower": "Сторожевая башня",
+  "block.minecolonies.blockhuttavern": "Таверна",
+  "block.minecolonies.blockhutdeliveryman": "Хижина курьера",
+  "item.minecolonies.supplycamp": "Лагерь снабжения",
+  "item.minecolonies.buildtool": "Инструмент строительства",
+  "itemGroup.minecolonies.colony": "МайнКолонии"
+}

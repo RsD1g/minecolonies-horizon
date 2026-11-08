@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:chest",
+    "minecraft:bread",
+    "minecraft:oak_log"
+  ],
+  "result": {
+    "id": "minecolonies:supplycamp",
+    "count": 1
+  }
+}

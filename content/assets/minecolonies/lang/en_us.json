@@ -1,0 +1,15 @@
+{
+  "block.minecolonies.blockhuttownhall": "Town Hall",
+  "block.minecolonies.blockhutbuilder": "Builder's Hut",
+  "block.minecolonies.blockhutwarehouse": "Warehouse",
+  "block.minecolonies.blockhutcitizen": "Residence",
+  "block.minecolonies.blockhutfarmer": "Farm",
+  "block.minecolonies.blockhutlumberjack": "Lumberjack's Hut",
+  "block.minecolonies.blockhutminer": "Mine",
+  "block.minecolonies.blockhutguardtower": "Guard Tower",
+  "block.minecolonies.blockhuttavern": "Tavern",
+  "block.minecolonies.blockhutdeliveryman": "Courier's Hut",
+  "item.minecolonies.supplycamp": "Supply Camp",
+  "item.minecolonies.buildtool": "Build Tool",
+  "itemGroup.minecolonies.colony": "MineColonies"
+}

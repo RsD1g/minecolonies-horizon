@@ -1,0 +1,15 @@
+{
+  "replace": false,
+  "values": [
+    "minecolonies:blockhuttownhall",
+    "minecolonies:blockhutbuilder",
+    "minecolonies:blockhutwarehouse",
+    "minecolonies:blockhutcitizen",
+    "minecolonies:blockhutfarmer",
+    "minecolonies:blockhutlumberjack",
+    "minecolonies:blockhutminer",
+    "minecolonies:blockhutguardtower",
+    "minecolonies:blockhuttavern",
+    "minecolonies:blockhutdeliveryman"
+  ]
+}
