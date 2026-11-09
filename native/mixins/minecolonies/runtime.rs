@@ -3487,6 +3487,95 @@ fn research_lines(colony: &Colony, lang: Lang) -> Vec<String> {
     lines
 }
 
+fn shaped(result: &str, pattern: &[&str], key: &[(&str, &str)]) -> String {
+    let mut keys = serde_json::Map::new();
+    for (symbol, item) in key {
+        keys.insert((*symbol).to_owned(), serde_json::Value::String((*item).to_owned()));
+    }
+    serde_json::json!({
+        "type": "minecraft:crafting_shaped",
+        "category": "misc",
+        "pattern": pattern,
+        "key": keys,
+        "result": {"id": result, "count": 1}
+    })
+    .to_string()
+}
+
+fn hut_recipe(block: &str, center: &str) -> (String, String) {
+    (
+        block.to_owned(),
+        shaped(
+            &format!("minecolonies:{block}"),
+            &["PPP", "PCP", "PPP"],
+            &[("P", "minecraft:oak_planks"), ("C", center)],
+        ),
+    )
+}
+
+/// Crafting recipes the native mod adds when the content pack is not installed.
+/// The id is the path under `data/minecolonies/recipe/`, without `.json`.
+pub fn recipe_files() -> Vec<(String, String)> {
+    let mut files = vec![
+        (
+            "supplycamp".into(),
+            serde_json::json!({
+                "type": "minecraft:crafting_shapeless",
+                "category": "misc",
+                "ingredients": ["minecraft:chest", "minecraft:bread", "minecraft:oak_log"],
+                "result": {"id": "minecolonies:supplycamp", "count": 1}
+            })
+            .to_string(),
+        ),
+        (
+            "buildtool".into(),
+            shaped(
+                "minecolonies:buildtool",
+                &[" S ", "SLS", " S "],
+                &[("S", "minecraft:stick"), ("L", "minecraft:leather")],
+            ),
+        ),
+        (
+            "supplyship".into(),
+            shaped(
+                "minecolonies:supplyship",
+                &[" B ", "BBB", " B "],
+                &[("B", "minecraft:oak_boat")],
+            ),
+        ),
+        (
+            "rallybanner".into(),
+            shaped(
+                "minecolonies:rallybanner",
+                &["W", "S"],
+                &[("W", "minecraft:white_banner"), ("S", "minecraft:stick")],
+            ),
+        ),
+    ];
+    for (block, center) in [
+        ("blockhutbuilder", "minecraft:oak_door"),
+        ("blockhutwarehouse", "minecraft:barrel"),
+        ("blockhutcitizen", "minecraft:chest"),
+        ("blockhutfarmer", "minecraft:wooden_hoe"),
+        ("blockhutlumberjack", "minecraft:wooden_axe"),
+        ("blockhutminer", "minecraft:wooden_pickaxe"),
+        ("blockhutguardtower", "minecraft:wooden_sword"),
+        ("blockhuttavern", "minecraft:red_bed"),
+        ("blockhutdeliveryman", "minecraft:string"),
+        ("blockhutfisherman", "minecraft:fishing_rod"),
+        ("blockhutsawmill", "minecraft:iron_axe"),
+        ("blockhutbaker", "minecraft:wheat"),
+        ("blockhutrestaurant", "minecraft:bread"),
+        ("blockhutuniversity", "minecraft:book"),
+        ("blockhutlibrary", "minecraft:bookshelf"),
+        ("blockhuthospital", "minecraft:glistering_melon_slice"),
+        ("blockhutbarracks", "minecraft:iron_sword"),
+    ] {
+        files.push(hut_recipe(block, center));
+    }
+    files
+}
+
 fn help_lines(lang: Lang) -> Vec<String> {
     vec![tr(
         lang,
@@ -4044,6 +4133,24 @@ mod tests {
             .unwrap();
         assert!(owned(&world).research.contains("woodworking"));
         assert!(owned(&world).stock["minecraft:oak_log"] < logs);
+    }
+
+    #[test]
+    fn the_native_mod_ships_a_craft_for_every_item() {
+        let files = recipe_files();
+        assert_eq!(files.len(), 21);
+        let mut results = BTreeSet::new();
+        for (id, json) in &files {
+            let value: serde_json::Value = serde_json::from_str(json).unwrap();
+            let result = value["result"]["id"].as_str().unwrap();
+            assert_eq!(result, &format!("minecolonies:{id}"));
+            assert!(value["type"].as_str().unwrap().starts_with("minecraft:crafting_"));
+            results.insert(result.to_owned());
+        }
+        assert!(results.contains("minecolonies:supplycamp"));
+        assert!(results.contains("minecolonies:buildtool"));
+        assert!(results.contains("minecolonies:blockhutbuilder"));
+        assert!(results.contains("minecolonies:blockhutbarracks"));
     }
 
     #[test]

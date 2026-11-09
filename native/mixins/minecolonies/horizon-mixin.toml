@@ -16,6 +16,33 @@ name = "minecolonies"
 source = "runtime.rs"
 
 [[injection]]
+id = "blocks"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_blocks"
+helper = "blocks.rs"
+bindings = [
+  { name = "blocks", ty = "&mut Vec<horizon_mods::content::Block>", value = "&mut *blocks" },
+]
+
+[[injection]]
+id = "items"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_items"
+helper = "items.rs"
+bindings = [
+  { name = "items", ty = "&mut Vec<horizon_mods::content::Item>", value = "&mut *items" },
+]
+
+[[injection]]
+id = "recipes"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_data_pack_files"
+helper = "recipes.rs"
+bindings = [
+  { name = "files", ty = "&mut Vec<(String, Vec<u8>)>", value = "&mut *files" },
+]
+
+[[injection]]
 id = "list"
 kind = "HEAD"
 target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
