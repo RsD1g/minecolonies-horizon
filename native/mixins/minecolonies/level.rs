@@ -85,6 +85,11 @@ fn minecolonies_level(game: &mut crate::game::Game<'_>, dimension: &str) {
                     let _ = game.native_remove_mob(&dim, entity);
                 }
             }
+            m::Intent::Stamp { dimension: dim, blocks } => {
+                if dim == dimension {
+                    place(game, &dim, &blocks);
+                }
+            }
             m::Intent::Talk { player, text } => {
                 let _ = game.native_tell(player, horizon_client::text::Text::literal(text));
             }

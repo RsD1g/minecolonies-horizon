@@ -1,0 +1,40 @@
+{
+  "variants": {
+    "facing=north,open=true": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=north,open=false": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=south,open=true": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=south,open=false": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=east,open=true": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=east,open=false": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=west,open=true": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=west,open=false": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=up,open=true": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=up,open=false": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=down,open=true": {
+      "model": "minecolonies:block/ledger"
+    },
+    "facing=down,open=false": {
+      "model": "minecolonies:block/ledger"
+    }
+  }
+}

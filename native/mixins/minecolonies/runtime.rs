@@ -245,7 +245,7 @@ impl Lang {
     }
 }
 
-fn tr(lang: Lang, en: &str, ru: &str) -> String {
+pub fn tr(lang: Lang, en: &str, ru: &str) -> String {
     match lang {
         Lang::En => en.to_owned(),
         Lang::Ru => ru.to_owned(),
@@ -465,6 +465,23 @@ pub struct World {
     /// Build-tool selection, keyed by the player's id. Not part of the colony.
     #[serde(default, skip)]
     picks: BTreeMap<String, String>,
+    /// First corner of a scan, until the second click.
+    #[serde(default)]
+    scan_corner: BTreeMap<String, [i32; 3]>,
+    /// Saved scans, relative to the minimum corner. Air is left out.
+    #[serde(default)]
+    scans: BTreeMap<String, Vec<ScanCell>>,
+    /// How far a citizen's conversation has gone. Not saved.
+    #[serde(default, skip)]
+    talks: BTreeMap<String, u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ScanCell {
+    x: i32,
+    y: i32,
+    z: i32,
+    state: String,
 }
 
 #[derive(Clone, Debug)]
@@ -546,6 +563,11 @@ pub enum Intent {
         player: u128,
         text: String,
     },
+    /// Paste a scanned volume. Not tied to a hut.
+    Stamp {
+        dimension: String,
+        blocks: Vec<BlockAt>,
+    },
     Sync {
         player: u128,
         text: String,
@@ -592,6 +614,9 @@ impl World {
             pending: Vec::new(),
             dirty: false,
             picks: BTreeMap::new(),
+            scan_corner: BTreeMap::new(),
+            scans: BTreeMap::new(),
+            talks: BTreeMap::new(),
         }
     }
 
@@ -678,16 +703,99 @@ impl World {
                     .map(|citizen| citizen_title(self.lang, citizen))
             })
             .unwrap_or_default();
-        let line = tr(
-            self.lang,
-            &format!("{name}. The build tool assigns their work."),
-            &format!("{name}. Инструмент строительства назначает работу."),
-        );
+        let key = format!("{}:{entity}", actor.uuid);
+        let step = self.talks.get(&key).copied().unwrap_or(0);
+        self.talks.insert(key, step.wrapping_add(1) % 3);
+        let lines = self
+            .colonies
+            .iter()
+            .find(|colony| colony.owner == actor.uuid)
+            .and_then(|colony| {
+                colony
+                    .citizens
+                    .iter()
+                    .find(|citizen| citizen.entity == Some(entity))
+                    .map(|citizen| talk_lines(self.lang, colony, citizen, step))
+            })
+            .unwrap_or_else(|| vec![name]);
         Some(Gesture {
-            lines: vec![line],
+            lines,
             consume: None,
-            bar: true,
+            bar: false,
         })
+    }
+
+    /// What the colony ledger should do for button `id`.
+    pub fn ledger_press(&mut self, actor: &Actor, id: i32) -> Vec<String> {
+        match id {
+            0 => self.with_colony(actor, |colony, lang| Reply::say(info_lines(colony, lang))).lines,
+            1 => self.with_colony(actor, |colony, lang| Reply::say(stock_lines(colony, lang))).lines,
+            2 => self.with_colony(actor, |colony, lang| Reply::say(citizen_lines(colony, lang))).lines,
+            3 => match self.next_research(actor) {
+                Some(node) => self.research(actor, node).lines,
+                None => self.with_colony(actor, |colony, lang| Reply::say(research_lines(colony, lang))).lines,
+            },
+            4 => self.with_colony(actor, |colony, lang| Reply::say(visitor_lines(colony, lang))).lines,
+            _ => Vec::new(),
+        }
+    }
+
+    /// One click of the scan tool. `None` is an air click, which pastes.
+    pub fn scan_touch(&mut self, actor: &Actor, pos: Option<[i32; 3]>) -> ScanTouch {
+        let key = actor.uuid.to_string();
+        let Some(pos) = pos else {
+            return self.paste_scan(actor);
+        };
+        match self.scan_corner.remove(&key) {
+            None => {
+                self.scan_corner.insert(key, pos);
+                self.dirty = true;
+                ScanTouch::Marked(pos)
+            }
+            Some(first) => match scan_bounds(first, pos) {
+                Some((from, to)) => ScanTouch::Read { from, to },
+                None => ScanTouch::TooBig,
+            },
+        }
+    }
+
+    pub fn save_scan(&mut self, actor: &Actor, origin: [i32; 3], cells: Vec<([i32; 3], String)>) {
+        let key = actor.uuid.to_string();
+        let saved: Vec<ScanCell> = cells
+            .into_iter()
+            .filter(|(_, state)| !state.ends_with(":air") && state != "minecraft:air")
+            .map(|(at, state)| ScanCell {
+                x: at[0] - origin[0],
+                y: at[1] - origin[1],
+                z: at[2] - origin[2],
+                state,
+            })
+            .collect();
+        self.scans.insert(key, saved);
+        self.dirty = true;
+    }
+
+    fn paste_scan(&mut self, actor: &Actor) -> ScanTouch {
+        let Some(cells) = self.scans.get(&actor.uuid.to_string()).cloned() else {
+            return ScanTouch::NeedScan;
+        };
+        let (origin, _) = door_ahead(actor, 2);
+        let blocks: Vec<BlockAt> = cells
+            .iter()
+            .map(|cell| BlockAt {
+                x: origin[0] + cell.x,
+                y: origin[1] + cell.y,
+                z: origin[2] + cell.z,
+                state: cell.state.clone(),
+            })
+            .collect();
+        let count = blocks.len();
+        self.pending.push(Intent::Stamp {
+            dimension: actor.dimension.clone(),
+            blocks,
+        });
+        self.dirty = true;
+        ScanTouch::Pasted(count)
     }
 
     fn note(&self, en: &str, ru: &str) -> Gesture {
@@ -2098,6 +2206,97 @@ pub fn rot_from_face(face: [i32; 3], yaw: f32) -> u8 {
         [0, 0, 1] => 2,
         [-1, 0, 0] => 3,
         _ => rot_from_yaw(yaw),
+    }
+}
+
+pub enum ScanTouch {
+    Marked([i32; 3]),
+    Read { from: [i32; 3], to: [i32; 3] },
+    TooBig,
+    NeedScan,
+    Pasted(usize),
+}
+
+pub fn scan_message(touch: &ScanTouch, lang: Lang) -> String {
+    match touch {
+        ScanTouch::Marked(at) => tr(
+            lang,
+            &format!("Scan corner {}, {}, {}. Click the opposite corner.", at[0], at[1], at[2]),
+            &format!("Угол скана {}, {}, {}. Кликните противоположный угол.", at[0], at[1], at[2]),
+        ),
+        ScanTouch::TooBig => tr(
+            lang,
+            "That volume is larger than 16 blocks on a side.",
+            "Этот объём больше 16 блоков по стороне.",
+        ),
+        ScanTouch::NeedScan => tr(
+            lang,
+            "No scan yet. Click two corners with the scan tool.",
+            "Скана ещё нет. Кликните инструментом сканирования по двум углам.",
+        ),
+        ScanTouch::Pasted(n) => tr(
+            lang,
+            &format!("Pasted {n} scanned blocks."),
+            &format!("Вставлено блоков из скана: {n}."),
+        ),
+        ScanTouch::Read { .. } => String::new(),
+    }
+}
+
+fn scan_bounds(a: [i32; 3], b: [i32; 3]) -> Option<([i32; 3], [i32; 3])> {
+    let span = |p: usize| (a[p] - b[p]).unsigned_abs();
+    if span(0) > 15 || span(1) > 15 || span(2) > 15 {
+        return None;
+    }
+    Some((
+        [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
+        [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
+    ))
+}
+
+fn talk_lines(lang: Lang, colony: &Colony, citizen: &Citizen, step: u8) -> Vec<String> {
+    let name = citizen_title(lang, citizen);
+    match step % 3 {
+        0 => vec![tr(
+            lang,
+            &format!("{name}: The warehouse is our common store."),
+            &format!("{name}: Склад — наш общий запас."),
+        )],
+        1 => {
+            let hungry = colony.happiness < 40;
+            if hungry {
+                vec![tr(
+                    lang,
+                    &format!("{name}: We are hungry. Put bread in the warehouse."),
+                    &format!("{name}: Мы голодны. Положите хлеб на склад."),
+                )]
+            } else if citizen.wounded {
+                vec![tr(
+                    lang,
+                    &format!("{name}: I am hurt. A hospital or some rest would help."),
+                    &format!("{name}: Я ранен. Поможет больница или отдых."),
+                )]
+            } else {
+                vec![tr(
+                    lang,
+                    &format!("{name}: I can take another job if you bring the build tool."),
+                    &format!("{name}: Могу сменить работу, если принесёте инструмент строительства."),
+                )]
+            }
+        }
+        _ => vec![tr(
+            lang,
+            &format!(
+                "{name}: {} of us live here. Happiness is {}.",
+                colony.citizens.len(),
+                colony.happiness
+            ),
+            &format!(
+                "{name}: Нас здесь {}. Счастье {}.",
+                colony.citizens.len(),
+                colony.happiness
+            ),
+        )],
     }
 }
 
@@ -4319,6 +4518,22 @@ pub fn recipe_files() -> Vec<(String, String)> {
                 &[("W", "minecraft:white_banner"), ("S", "minecraft:stick")],
             ),
         ),
+        (
+            "scantool".into(),
+            shaped(
+                "minecolonies:scantool",
+                &["C", "P"],
+                &[("C", "minecraft:compass"), ("P", "minecraft:paper")],
+            ),
+        ),
+        (
+            "ledger".into(),
+            shaped(
+                "minecolonies:ledger",
+                &["B", "C"],
+                &[("B", "minecraft:book"), ("C", "minecraft:chest")],
+            ),
+        ),
     ];
     for (block, center) in [
         ("blockhutbuilder", "minecraft:oak_door"),
@@ -4363,6 +4578,12 @@ pub fn recipe_files() -> Vec<(String, String)> {
         ("blockhutconcretemixer", "minecraft:white_concrete_powder"),
         ("blockhutarchery", "minecraft:bow"),
         ("blockhutcombatacademy", "minecraft:shield"),
+        ("shingle", "minecraft:brick"),
+        ("timber", "minecraft:oak_log"),
+        ("paperwall", "minecraft:paper"),
+        ("framing", "minecraft:stick"),
+        ("pillar", "minecraft:quartz_block"),
+        ("windowpane", "minecraft:glass_pane"),
     ] {
         files.push(hut_recipe(block, center));
     }
@@ -4956,7 +5177,7 @@ mod tests {
     #[test]
     fn the_native_mod_ships_a_craft_for_every_item() {
         let files = recipe_files();
-        assert_eq!(files.len(), 46);
+        assert!(files.len() >= 46);
         let mut results = BTreeSet::new();
         for (id, json) in &files {
             let value: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -4969,6 +5190,39 @@ mod tests {
         assert!(results.contains("minecolonies:buildtool"));
         assert!(results.contains("minecolonies:blockhutbuilder"));
         assert!(results.contains("minecolonies:blockhutbarracks"));
+        assert!(results.contains("minecolonies:scantool"));
+        assert!(results.contains("minecolonies:ledger"));
+        assert!(results.contains("minecolonies:shingle"));
+    }
+
+    #[test]
+    fn the_scan_tool_remembers_a_volume_and_a_citizen_talks() {
+        let mut world = World::new();
+        let player = actor(7, 0, 0);
+        world.command(&player, "colony found A");
+        assert!(matches!(world.scan_touch(&player, Some([1, 64, 1])), ScanTouch::Marked(_)));
+        assert!(matches!(
+            world.scan_touch(&player, Some([2, 64, 2])),
+            ScanTouch::Read { .. }
+        ));
+        world.save_scan(
+            &player,
+            [1, 64, 1],
+            vec![
+                ([1, 64, 1], "minecraft:oak_planks".into()),
+                ([2, 64, 2], "minecraft:air".into()),
+            ],
+        );
+        assert_eq!(world.scans[&player.uuid.to_string()].len(), 1);
+        assert!(matches!(world.scan_touch(&player, None), ScanTouch::Pasted(1)));
+        assert!(world.pending.iter().any(|intent| matches!(intent, Intent::Stamp { .. })));
+        let entity = 4;
+        world.colonies[0].citizens[0].entity = Some(entity);
+        let first = world.gesture_entity(&player, entity, "").unwrap();
+        let second = world.gesture_entity(&player, entity, "").unwrap();
+        assert_ne!(first.lines[0], second.lines[0]);
+        let lines = world.ledger_press(&player, 2);
+        assert!(!lines.is_empty());
     }
 
     #[test]

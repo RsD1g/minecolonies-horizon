@@ -24,6 +24,40 @@ fn minecolonies_use_on(
         player.position,
         player.yaw,
     );
+    if stack.item == "minecolonies:scantool" {
+        let touch = m::with_world(|world| world.scan_touch(&actor, Some(pos)));
+        if let m::ScanTouch::Read { from, to } = touch {
+            let mut cells = Vec::new();
+            let mut x = from[0];
+            while x <= to[0] {
+                let mut y = from[1];
+                while y <= to[1] {
+                    let mut z = from[2];
+                    while z <= to[2] {
+                        cells.push(([x, y, z], game.native_block([x, y, z])));
+                        z += 1;
+                    }
+                    y += 1;
+                }
+                x += 1;
+            }
+            let count = cells.len();
+            m::with_world(|world| world.save_scan(&actor, from, cells));
+            game.native_feedback(horizon_client::text::Text::literal(format!(
+                "Scan kept: {count} blocks. Right-click the air to paste."
+            )));
+        } else {
+            let lang = m::Lang::parse(game.native_setting(m::ID, "lang").as_deref());
+            game.native_feedback(horizon_client::text::Text::literal(m::scan_message(
+                &touch, lang,
+            )));
+        }
+        if m::with_world(|world| world.is_dirty()) {
+            m::save_now(dir.as_deref());
+        }
+        *claimed = true;
+        return;
+    }
     let door = [pos[0] + face[0], pos[1] + face[1], pos[2] + face[2]];
     let block = game.native_block(pos);
     let Some(gesture) = m::gesture(&actor, &stack.item, Some((door, face)), Some(block.as_str()))

@@ -42,9 +42,17 @@
   "block.minecolonies.blockhutconcretemixer": "Бетономешалка",
   "block.minecolonies.blockhutarchery": "Стрельбище",
   "block.minecolonies.blockhutcombatacademy": "Боевая академия",
+  "block.minecolonies.shingle": "Черепица",
+  "block.minecolonies.timber": "Брус",
+  "block.minecolonies.paperwall": "Бумажная стена",
+  "block.minecolonies.framing": "Каркас",
+  "block.minecolonies.pillar": "Колонна",
+  "block.minecolonies.windowpane": "Окно",
   "item.minecolonies.supplycamp": "Лагерь снабжения",
   "item.minecolonies.supplyship": "Корабль снабжения",
   "item.minecolonies.buildtool": "Инструмент строительства",
   "item.minecolonies.rallybanner": "Знамя сбора",
+  "item.minecolonies.scantool": "Инструмент сканирования",
+  "block.minecolonies.ledger": "Книга колонии",
   "itemGroup.minecolonies.colony": "МайнКолонии"
 }

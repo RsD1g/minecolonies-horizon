@@ -42,9 +42,17 @@
   "block.minecolonies.blockhutconcretemixer": "Concrete Mixer",
   "block.minecolonies.blockhutarchery": "Archery",
   "block.minecolonies.blockhutcombatacademy": "Combat Academy",
+  "block.minecolonies.shingle": "Shingle",
+  "block.minecolonies.timber": "Timber",
+  "block.minecolonies.paperwall": "Paper Wall",
+  "block.minecolonies.framing": "Framing",
+  "block.minecolonies.pillar": "Pillar",
+  "block.minecolonies.windowpane": "Window",
   "item.minecolonies.supplycamp": "Supply Camp",
   "item.minecolonies.supplyship": "Supply Ship",
   "item.minecolonies.buildtool": "Build Tool",
   "item.minecolonies.rallybanner": "Rally Banner",
+  "item.minecolonies.scantool": "Scan Tool",
+  "block.minecolonies.ledger": "Colony Ledger",
   "itemGroup.minecolonies.colony": "MineColonies"
 }

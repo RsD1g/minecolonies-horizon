@@ -42,6 +42,13 @@
     "minecolonies:blockhutdyer",
     "minecolonies:blockhutconcretemixer",
     "minecolonies:blockhutarchery",
-    "minecolonies:blockhutcombatacademy"
+    "minecolonies:blockhutcombatacademy",
+    "minecolonies:shingle",
+    "minecolonies:timber",
+    "minecolonies:paperwall",
+    "minecolonies:framing",
+    "minecolonies:pillar",
+    "minecolonies:windowpane",
+    "minecolonies:ledger"
   ]
 }

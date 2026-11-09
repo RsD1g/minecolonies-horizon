@@ -16,6 +16,71 @@ name = "minecolonies"
 source = "runtime.rs"
 
 [[injection]]
+id = "entity"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_block_entity"
+helper = "entity.rs"
+bindings = [
+  { name = "block", ty = "&str", value = "block" },
+  { name = "entity", ty = "&mut Option<(String, horizon_world::nbt::Compound)>", value = "&mut *entity" },
+]
+
+[[injection]]
+id = "container"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_block_entity_container"
+helper = "container.rs"
+bindings = [
+  { name = "block", ty = "&str", value = "block" },
+  { name = "container", ty = "&mut Option<horizon_client::containers::ModContainer>", value = "&mut *container" },
+]
+
+[[injection]]
+id = "gui"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen"
+helper = "gui.rs"
+bindings = [
+  { name = "block", ty = "&str", value = "block" },
+  { name = "screen", ty = "&mut Option<horizon_client::mod_api::NativeScreen>", value = "&mut *screen" },
+]
+
+[[injection]]
+id = "gui_draw"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_draw"
+helper = "gui_draw.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "block", ty = "&str", value = "block" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "origin", ty = "[f32; 2]", value = "origin" },
+]
+
+[[injection]]
+id = "gui_click"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_click"
+helper = "gui_click.rs"
+bindings = [
+  { name = "block", ty = "&str", value = "block" },
+  { name = "at", ty = "[f32; 2]", value = "at" },
+  { name = "right", ty = "bool", value = "right" },
+  { name = "button", ty = "&mut Option<i32>", value = "&mut *button" },
+]
+
+[[injection]]
+id = "gui_button"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_menu_button"
+helper = "gui_button.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pos", ty = "[i32; 3]", value = "pos" },
+  { name = "id", ty = "i32", value = "id" },
+]
+
+[[injection]]
 id = "blocks"
 kind = "HEAD"
 target = "horizon_client::game::native_hooks::Game<'_>::native_blocks"

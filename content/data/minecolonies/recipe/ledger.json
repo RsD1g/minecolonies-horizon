@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "B",
+    "C"
+  ],
+  "key": {
+    "B": "minecraft:book",
+    "C": "minecraft:chest"
+  },
+  "result": {
+    "id": "minecolonies:ledger",
+    "count": 1
+  }
+}

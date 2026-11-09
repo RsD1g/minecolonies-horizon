@@ -45,9 +45,17 @@
     "minecolonies:blockhutconcretemixer",
     "minecolonies:blockhutarchery",
     "minecolonies:blockhutcombatacademy",
+    "minecolonies:shingle",
+    "minecolonies:timber",
+    "minecolonies:paperwall",
+    "minecolonies:framing",
+    "minecolonies:pillar",
+    "minecolonies:windowpane",
+    "minecolonies:ledger",
     "minecolonies:supplycamp",
     "minecolonies:supplyship",
     "minecolonies:buildtool",
-    "minecolonies:rallybanner"
+    "minecolonies:rallybanner",
+    "minecolonies:scantool"
   ]
 }

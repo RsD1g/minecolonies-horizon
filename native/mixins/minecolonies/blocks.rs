@@ -1,4 +1,4 @@
-// Hut blocks, so they exist even when the content pack is not installed.
+// Hut blocks, decoration and the colony ledger, so they exist without the content pack.
 fn minecolonies_blocks(blocks: &mut Vec<horizon_mods::content::Block>) {
     for path in [
         "blockhuttownhall",
@@ -44,6 +44,12 @@ fn minecolonies_blocks(blocks: &mut Vec<horizon_mods::content::Block>) {
         "blockhutconcretemixer",
         "blockhutarchery",
         "blockhutcombatacademy",
+        "shingle",
+        "timber",
+        "paperwall",
+        "framing",
+        "pillar",
+        "windowpane",
     ] {
         blocks.push(horizon_mods::content::Block {
             id: format!("minecolonies:{path}"),
@@ -52,4 +58,10 @@ fn minecolonies_blocks(blocks: &mut Vec<horizon_mods::content::Block>) {
             ..Default::default()
         });
     }
+    blocks.push(horizon_mods::content::Block {
+        id: "minecolonies:ledger".into(),
+        template: "minecraft:barrel".into(),
+        item: true,
+        ..Default::default()
+    });
 }

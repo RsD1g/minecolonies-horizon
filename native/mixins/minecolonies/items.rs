@@ -5,6 +5,7 @@ fn minecolonies_items(items: &mut Vec<horizon_mods::content::Item>) {
         ("supplyship", "minecraft:paper"),
         ("buildtool", "minecraft:stick"),
         ("rallybanner", "minecraft:paper"),
+        ("scantool", "minecraft:compass"),
     ] {
         items.push(horizon_mods::content::Item {
             id: format!("minecolonies:{path}"),

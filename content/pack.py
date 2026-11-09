@@ -52,6 +52,12 @@ HUTS = {
     "blockhutconcretemixer": ((140, 140, 140), (180, 180, 180), "Concrete Mixer", "Бетономешалка", 0),
     "blockhutarchery": ((90, 110, 60), (160, 130, 70), "Archery", "Стрельбище", 13),
     "blockhutcombatacademy": ((80, 70, 70), (140, 50, 50), "Combat Academy", "Боевая академия", 15),
+    "shingle": ((140, 70, 50), (90, 48, 36), "Shingle", "Черепица", 12),
+    "timber": ((110, 74, 42), (70, 48, 28), "Timber", "Брус", 26),
+    "paperwall": ((210, 196, 160), (170, 150, 110), "Paper Wall", "Бумажная стена", 2),
+    "framing": ((160, 120, 70), (90, 64, 36), "Framing", "Каркас", 8),
+    "pillar": ((180, 176, 160), (120, 118, 100), "Pillar", "Колонна", 4),
+    "windowpane": ((170, 200, 210), (120, 160, 180), "Window", "Окно", 3),
 }
 
 
@@ -170,13 +176,17 @@ def main():
 
     write(
         "data/minecraft/tags/block/mineable/axe.json",
-        json.dumps({"values": [f"minecolonies:{block}" for block in HUTS]}, indent=2),
+        json.dumps(
+            {"values": [f"minecolonies:{block}" for block in HUTS] + ["minecolonies:ledger"]},
+            indent=2,
+        ),
     )
     for item, template, rarity, en_name, ru_name in (
         ("supplycamp", "minecraft:paper", "uncommon", "Supply Camp", "Лагерь снабжения"),
         ("supplyship", "minecraft:paper", "uncommon", "Supply Ship", "Корабль снабжения"),
         ("buildtool", "minecraft:stick", "uncommon", "Build Tool", "Инструмент строительства"),
         ("rallybanner", "minecraft:paper", "uncommon", "Rally Banner", "Знамя сбора"),
+        ("scantool", "minecraft:compass", "uncommon", "Scan Tool", "Инструмент сканирования"),
     ):
         write(
             f"data/minecolonies/horizon/item/{item}.json",
@@ -284,6 +294,12 @@ def main():
         "blockhutconcretemixer": "minecraft:white_concrete_powder",
         "blockhutarchery": "minecraft:bow",
         "blockhutcombatacademy": "minecraft:shield",
+        "shingle": "minecraft:brick",
+        "timber": "minecraft:oak_log",
+        "paperwall": "minecraft:paper",
+        "framing": "minecraft:stick",
+        "pillar": "minecraft:quartz_block",
+        "windowpane": "minecraft:glass_pane",
     }
     for block, center in centers.items():
         write(
@@ -312,11 +328,78 @@ def main():
             indent=2,
         ),
     )
+    write(
+        "data/minecolonies/horizon/block/ledger.json",
+        json.dumps(
+            {
+                "template": "minecraft:barrel",
+                "item": True,
+                "properties": {"hardness": 2.0, "sounds": "minecraft:wood", "map_color": 13},
+            },
+            indent=2,
+        ),
+    )
+    facing = {}
+    for direction in ("north", "south", "east", "west", "up", "down"):
+        for open_ in ("true", "false"):
+            facing[f"facing={direction},open={open_}"] = {"model": "minecolonies:block/ledger"}
+    write(
+        "assets/minecolonies/blockstates/ledger.json",
+        json.dumps({"variants": facing}, indent=2),
+    )
+    write(
+        "assets/minecolonies/models/block/ledger.json",
+        json.dumps(
+            {"parent": "minecraft:block/cube_all", "textures": {"all": "minecolonies:block/ledger"}},
+            indent=2,
+        ),
+    )
+    write(
+        "assets/minecolonies/models/item/ledger.json",
+        json.dumps({"parent": "minecolonies:block/ledger"}, indent=2),
+    )
+    write(
+        "assets/minecolonies/items/ledger.json",
+        json.dumps({"model": {"type": "minecraft:model", "model": "minecolonies:block/ledger"}}, indent=2),
+    )
+    ledger_tex = ROOT / "assets/minecolonies/textures/block/ledger.png"
+    ledger_tex.parent.mkdir(parents=True, exist_ok=True)
+    ledger_tex.write_bytes(face((92, 64, 40), (196, 164, 96)))
+    en["block.minecolonies.ledger"] = "Colony Ledger"
+    ru["block.minecolonies.ledger"] = "Книга колонии"
+    write(
+        "data/minecolonies/recipe/ledger.json",
+        json.dumps(
+            {
+                "type": "minecraft:crafting_shaped",
+                "category": "misc",
+                "pattern": ["B", "C"],
+                "key": {"B": "minecraft:book", "C": "minecraft:chest"},
+                "result": {"id": "minecolonies:ledger", "count": 1},
+            },
+            indent=2,
+        ),
+    )
+    write(
+        "data/minecolonies/recipe/scantool.json",
+        json.dumps(
+            {
+                "type": "minecraft:crafting_shaped",
+                "category": "equipment",
+                "pattern": ["C", "P"],
+                "key": {"C": "minecraft:compass", "P": "minecraft:paper"},
+                "result": {"id": "minecolonies:scantool", "count": 1},
+            },
+            indent=2,
+        ),
+    )
     items = [f"minecolonies:{block}" for block in HUTS] + [
+        "minecolonies:ledger",
         "minecolonies:supplycamp",
         "minecolonies:supplyship",
         "minecolonies:buildtool",
         "minecolonies:rallybanner",
+        "minecolonies:scantool",
     ]
     write(
         "data/minecolonies/horizon/creative_tab/colony.json",
