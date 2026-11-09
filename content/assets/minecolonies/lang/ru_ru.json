@@ -9,7 +9,17 @@
   "block.minecolonies.blockhutguardtower": "Сторожевая башня",
   "block.minecolonies.blockhuttavern": "Таверна",
   "block.minecolonies.blockhutdeliveryman": "Хижина курьера",
+  "block.minecolonies.blockhutfisherman": "Хижина рыбака",
+  "block.minecolonies.blockhutsawmill": "Лесопилка",
+  "block.minecolonies.blockhutbaker": "Пекарня",
+  "block.minecolonies.blockhutrestaurant": "Ресторан",
+  "block.minecolonies.blockhutuniversity": "Университет",
+  "block.minecolonies.blockhutlibrary": "Библиотека",
+  "block.minecolonies.blockhuthospital": "Больница",
+  "block.minecolonies.blockhutbarracks": "Казармы",
   "item.minecolonies.supplycamp": "Лагерь снабжения",
+  "item.minecolonies.supplyship": "Корабль снабжения",
   "item.minecolonies.buildtool": "Инструмент строительства",
+  "item.minecolonies.rallybanner": "Знамя сбора",
   "itemGroup.minecolonies.colony": "МайнКолонии"
 }

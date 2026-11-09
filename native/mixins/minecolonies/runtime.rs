@@ -23,8 +23,20 @@ const RAID_EVERY: u64 = 24_000;
 const FOOD_EVERY: u64 = 600;
 const WORK_EVERY: u64 = 100;
 const BUILD_NAG: u64 = 400;
-const MAX_CITIZENS: usize = 16;
+const MAX_CITIZENS: usize = 24;
 const RESIDENCE_CAP: usize = 4;
+
+fn level_one() -> u32 {
+    1
+}
+
+fn skill_four() -> u8 {
+    4
+}
+
+fn skill_two() -> u8 {
+    2
+}
 
 pub const GOODS: &[&str] = &[
     "minecraft:oak_planks",
@@ -37,6 +49,9 @@ pub const GOODS: &[&str] = &[
     "minecraft:wheat",
     "minecraft:coal",
     "minecraft:iron_ingot",
+    "minecraft:cod",
+    "minecraft:emerald",
+    "minecraft:cooked_beef",
 ];
 
 const SUPPLY: &[(&str, u32)] = &[
@@ -129,16 +144,30 @@ pub fn actor_of(uuid: u128, name: &str, dimension: &str, position: [f64; 3], yaw
 pub enum Held {
     Ignore,
     Tool,
-    Camp { lines: Vec<String>, consume: bool },
+    Camp {
+        lines: Vec<String>,
+        consume: bool,
+        item: &'static str,
+    },
+    Rally { lines: Vec<String> },
 }
 
 pub fn held(actor: &Actor, item: &str, clicked: Option<([i32; 3], [i32; 3])>) -> Held {
     if item == "minecolonies:buildtool" {
         return Held::Tool;
     }
-    if item != "minecolonies:supplycamp" {
+    if item == "minecolonies:rallybanner" {
+        let reply = with_world(|world| world.rally(actor));
+        return Held::Rally { lines: reply.lines };
+    }
+    if item != "minecolonies:supplycamp" && item != "minecolonies:supplyship" {
         return Held::Ignore;
     }
+    let item = if item == "minecolonies:supplyship" {
+        "minecolonies:supplyship"
+    } else {
+        "minecolonies:supplycamp"
+    };
     let (door, rot) = match clicked {
         Some((door, face)) => (door, rot_from_face(face, actor.yaw)),
         None => door_ahead(actor, 5),
@@ -149,6 +178,7 @@ pub fn held(actor: &Actor, item: &str, clicked: Option<([i32; 3], [i32; 3])>) ->
     Held::Camp {
         lines: reply.lines,
         consume: !had && has,
+        item,
     }
 }
 
@@ -171,6 +201,14 @@ pub fn command_usages() -> &'static [&'static str] {
         "colony recall",
         "colony abandon",
         "colony abandon confirm",
+        "colony upgrade <building:word>",
+        "colony visitors",
+        "colony recruit <index:integer>",
+        "colony guard <id:integer> <role:word>",
+        "colony rally",
+        "colony whoami",
+        "colony whereami",
+        "colony home",
     ]
 }
 
@@ -223,6 +261,14 @@ pub enum Kind {
     GuardTower,
     Tavern,
     Courier,
+    Fisher,
+    Sawmill,
+    Bakery,
+    Restaurant,
+    University,
+    Library,
+    Hospital,
+    Barracks,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -235,6 +281,10 @@ pub enum Job {
     Miner,
     Courier,
     Guard,
+    Fisher,
+    Sawyer,
+    Baker,
+    Cook,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -254,10 +304,21 @@ struct Building {
     plan: Vec<PlanBlock>,
     placed: u32,
     post: [i32; 3],
+    #[serde(default = "level_one")]
+    level: u32,
     #[serde(skip)]
     inflight: bool,
     #[serde(skip)]
     tries: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+enum GuardRole {
+    #[default]
+    Knight,
+    Archer,
+    Druid,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -265,8 +326,22 @@ struct Citizen {
     id: u32,
     name: String,
     job: Job,
+    #[serde(default = "skill_four")]
+    skill: u8,
+    #[serde(default = "skill_two")]
+    secondary: u8,
+    #[serde(default)]
+    role: GuardRole,
+    #[serde(default)]
+    wounded: bool,
     #[serde(skip)]
     entity: Option<u32>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Visitor {
+    name: String,
+    skill: u8,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -301,6 +376,18 @@ struct Colony {
     next_walk: u64,
     next_nag: u64,
     ore_tick: u32,
+    #[serde(default)]
+    meals: BTreeSet<String>,
+    #[serde(default)]
+    mourning_until: u64,
+    #[serde(default)]
+    pop_bonus: u32,
+    #[serde(default)]
+    visitors: Vec<Visitor>,
+    #[serde(default)]
+    rally_until: u64,
+    #[serde(default)]
+    rally_at: [i32; 3],
     #[serde(skip)]
     recall: bool,
     #[serde(skip)]
@@ -768,6 +855,30 @@ impl World {
         if let Some(args) = tail(rest, "research") {
             return self.research(actor, args);
         }
+        if let Some(args) = tail(rest, "upgrade") {
+            return self.upgrade(actor, args);
+        }
+        if tail(rest, "visitors").is_some() {
+            return self.with_colony(actor, |c, lang| Reply::say(visitor_lines(c, lang)));
+        }
+        if let Some(args) = tail(rest, "recruit") {
+            return self.recruit(actor, args);
+        }
+        if let Some(args) = tail(rest, "guard") {
+            return self.set_guard(actor, args);
+        }
+        if tail(rest, "rally").is_some() {
+            return self.rally(actor);
+        }
+        if tail(rest, "whoami").is_some() {
+            return self.with_colony(actor, |c, lang| Reply::say(info_lines(c, lang)));
+        }
+        if tail(rest, "whereami").is_some() {
+            return Reply::say(vec![self.whereami(actor)]);
+        }
+        if tail(rest, "home").is_some() {
+            return self.home(actor);
+        }
         if tail(rest, "raid").is_some() {
             return self.call_raid(actor);
         }
@@ -856,6 +967,7 @@ impl World {
                 plan: draft.plan,
                 placed: 0,
                 post: draft.post,
+                level: 1,
                 inflight: false,
                 tries: 0,
             }],
@@ -872,10 +984,18 @@ impl World {
             next_walk: clock + 15,
             next_nag: clock + BUILD_NAG,
             ore_tick: 0,
+            meals: BTreeSet::new(),
+            mourning_until: 0,
+            pop_bonus: 0,
+            visitors: Vec::new(),
+            rally_until: 0,
+            rally_at: door,
             recall: false,
             last_snap: String::new(),
             raid: None,
         };
+        add_citizen(&mut colony, Job::Unemployed);
+        add_citizen(&mut colony, Job::Unemployed);
         add_citizen(&mut colony, Job::Unemployed);
         add_citizen(&mut colony, Job::Unemployed);
         self.colonies.push(colony);
@@ -893,8 +1013,8 @@ impl World {
         let Some(kind) = parse_kind(args.trim()) else {
             return Reply::say(vec![tr(
                 lang,
-                "Buildings: builder, warehouse, residence, farm, lumberjack, miner, guardtower, tavern, courier.",
-                "Здания: builder, warehouse, residence, farm, lumberjack, miner, guardtower, tavern, courier.",
+                "Buildings: builder, warehouse, residence, farm, fisher, lumberjack, miner, sawmill, bakery, restaurant, guardtower, barracks, tavern, courier, university, library, hospital.",
+                "Здания: builder, warehouse, residence, farm, fisher, lumberjack, miner, sawmill, bakery, restaurant, guardtower, barracks, tavern, courier, university, library, hospital.",
             )]);
         };
         if kind == Kind::TownHall {
@@ -980,6 +1100,7 @@ impl World {
             plan: draft.plan,
             placed: 0,
             post: draft.post,
+            level: 1,
             inflight: false,
             tries: 0,
         });
@@ -1007,8 +1128,8 @@ impl World {
         let Some(job) = words.next().and_then(parse_job) else {
             return Reply::say(vec![tr(
                 lang,
-                "Jobs: builder, farmer, lumberjack, miner, courier, guard, unemployed.",
-                "Работы: builder, farmer, lumberjack, miner, courier, guard, unemployed.",
+                "Jobs: builder, farmer, fisher, lumberjack, miner, sawyer, baker, cook, courier, guard, unemployed.",
+                "Работы: builder, farmer, fisher, lumberjack, miner, sawyer, baker, cook, courier, guard, unemployed.",
             )]);
         };
         if words.next().is_some() {
@@ -1031,11 +1152,17 @@ impl World {
                     "Сначала поставьте чертёж хижины. /colony build",
                 )]);
             }
-            if colony.citizens.iter().any(|c| c.id != id && c.job == job) {
+            let cap = worker_cap(colony, job);
+            let taken = colony
+                .citizens
+                .iter()
+                .filter(|c| c.id != id && c.job == job)
+                .count();
+            if taken >= cap {
                 return Reply::say(vec![tr(
                     lang,
-                    "Someone already has that job.",
-                    "Эта работа уже занята.",
+                    "That hut has no free post. /colony upgrade raises the hut, and the warehouse level raises the courier cap.",
+                    "В этой хижине нет свободного места. /colony upgrade поднимает хижину, уровень склада поднимает число курьеров.",
                 )]);
             }
         }
@@ -1064,6 +1191,251 @@ impl World {
             text: name.clone(),
         });
         Reply::say(vec![name])
+    }
+
+    fn upgrade(&mut self, actor: &Actor, args: &str) -> Reply {
+        let lang = self.lang;
+        let Some(kind) = parse_kind(args.trim()) else {
+            return Reply::say(vec![tr(
+                lang,
+                "Upgrade: builder, warehouse, residence, farm, fisher, lumberjack, miner, sawmill, bakery, restaurant, guardtower, barracks, tavern, courier, university, library, hospital.",
+                "Улучшение: builder, warehouse, residence, farm, fisher, lumberjack, miner, sawmill, bakery, restaurant, guardtower, barracks, tavern, courier, university, library, hospital.",
+            )]);
+        };
+        let owner = actor.uuid;
+        let Some(colony) = self.colonies.iter_mut().find(|c| c.owner == owner) else {
+            return Reply::say(vec![tr(lang, "You have no colony.", "У вас нет колонии.")]);
+        };
+        let current = colony
+            .buildings
+            .iter()
+            .find(|b| b.kind == kind && done(b))
+            .map(|b| b.level);
+        let Some(current) = current else {
+            return Reply::say(vec![tr(
+                lang,
+                "Finish that hut before upgrading it.",
+                "Сначала достройте эту хижину.",
+            )]);
+        };
+        if current >= 5 {
+            return Reply::say(vec![tr(
+                lang,
+                "That hut is already level 5.",
+                "Эта хижина уже 5 уровня.",
+            )]);
+        }
+        let next = current + 1;
+        let builder_level = colony
+            .buildings
+            .iter()
+            .filter(|b| b.kind == Kind::Builder && done(b))
+            .map(|b| b.level)
+            .max()
+            .unwrap_or(0);
+        if kind != Kind::Builder && builder_level < next {
+            return Reply::say(vec![tr(
+                lang,
+                &format!("The builder's hut is level {builder_level}. Upgrade it to {next} first."),
+                &format!("Хижина строителя {builder_level} уровня. Сначала поднимите её до {next}."),
+            )]);
+        }
+        let cost = [
+            ("minecraft:oak_planks", 16 * next),
+            ("minecraft:cobblestone", 8 * next),
+            ("minecraft:oak_log", 4 * next),
+        ];
+        for (item, n) in cost {
+            if colony.stock.get(item).copied().unwrap_or(0) < n {
+                return Reply::say(vec![tr(
+                    lang,
+                    &format!("Upgrade to level {next} needs {n} {}.", short_item(item)),
+                    &format!("Для {next} уровня нужно {n} {}.", short_item(item)),
+                )]);
+            }
+        }
+        for (item, n) in cost {
+            pay(&mut colony.stock, item, n);
+        }
+        let Some(built) = colony.buildings.iter_mut().find(|b| b.kind == kind && done(b)) else {
+            return Reply::say(vec![tr(lang, "That hut is gone.", "Хижина пропала.")]);
+        };
+        built.level = next;
+        let tier = tool_tier(next);
+        self.dirty = true;
+        Reply::say(vec![tr(
+            lang,
+            &format!(
+                "{} is now level {next}. Workers there can use {tier} tools.",
+                kind_label(lang, kind)
+            ),
+            &format!(
+                "«{}» теперь {next} уровня. Работники могут брать инструменты: {tier}.",
+                kind_label(lang, kind)
+            ),
+        )])
+    }
+
+    fn recruit(&mut self, actor: &Actor, args: &str) -> Reply {
+        let lang = self.lang;
+        let Some(index) = args.trim().parse::<usize>().ok().filter(|n| *n > 0) else {
+            return Reply::say(vec![tr(
+                lang,
+                "Usage: /colony recruit <index>. /colony visitors",
+                "Формат: /colony recruit <номер>. /colony visitors",
+            )]);
+        };
+        let owner = actor.uuid;
+        let Some(colony) = self.colonies.iter_mut().find(|c| c.owner == owner) else {
+            return Reply::say(vec![tr(lang, "You have no colony.", "У вас нет колонии.")]);
+        };
+        if colony.citizens.len() >= MAX_CITIZENS {
+            return Reply::say(vec![tr(
+                lang,
+                "The colony cannot hold more citizens.",
+                "Колония не вмещает больше жителей.",
+            )]);
+        }
+        if colony.stock.get("minecraft:emerald").copied().unwrap_or(0) < 8 {
+            return Reply::say(vec![tr(
+                lang,
+                "The tavern asks 8 emeralds from the warehouse. /colony deposit",
+                "Таверна просит 8 изумрудов со склада. /colony deposit",
+            )]);
+        }
+        let Some(visitor) = colony.visitors.get(index - 1).cloned() else {
+            return Reply::say(vec![tr(
+                lang,
+                "No visitor with that number.",
+                "Нет посетителя с таким номером.",
+            )]);
+        };
+        pay(&mut colony.stock, "minecraft:emerald", 8);
+        colony.visitors.remove(index - 1);
+        add_citizen(colony, Job::Unemployed);
+        if let Some(citizen) = colony.citizens.last_mut() {
+            citizen.name = visitor.name.clone();
+            citizen.skill = visitor.skill;
+        }
+        self.dirty = true;
+        Reply::say(vec![tr(
+            lang,
+            &format!("{} joins the colony.", visitor.name),
+            &format!("{} остаётся в колонии.", visitor.name),
+        )])
+    }
+
+    fn set_guard(&mut self, actor: &Actor, args: &str) -> Reply {
+        let lang = self.lang;
+        let mut words = args.split_whitespace();
+        let Some(id) = words.next().and_then(|w| w.parse::<u32>().ok()) else {
+            return Reply::say(vec![tr(
+                lang,
+                "Usage: /colony guard <id> knight|archer|druid",
+                "Формат: /colony guard <id> knight|archer|druid",
+            )]);
+        };
+        let Some(role) = words.next().and_then(parse_role) else {
+            return Reply::say(vec![tr(
+                lang,
+                "Roles: knight, archer, druid.",
+                "Роли: knight, archer, druid.",
+            )]);
+        };
+        let owner = actor.uuid;
+        let Some(colony) = self.colonies.iter_mut().find(|c| c.owner == owner) else {
+            return Reply::say(vec![tr(lang, "You have no colony.", "У вас нет колонии.")]);
+        };
+        let Some(citizen) = colony.citizens.iter_mut().find(|c| c.id == id) else {
+            return Reply::say(vec![tr(
+                lang,
+                "No citizen with that id.",
+                "Нет жителя с таким номером.",
+            )]);
+        };
+        if citizen.job != Job::Guard {
+            return Reply::say(vec![tr(
+                lang,
+                "Hire them as a guard first.",
+                "Сначала назначьте его стражником.",
+            )]);
+        }
+        citizen.role = role;
+        let label = role_label(role);
+        self.dirty = true;
+        Reply::say(vec![tr(
+            lang,
+            &format!("{} now fights as a {label}.", citizen.name),
+            &format!("{} теперь сражается как {label}.", citizen.name),
+        )])
+    }
+
+    pub fn rally(&mut self, actor: &Actor) -> Reply {
+        let lang = self.lang;
+        let clock = self.clock;
+        let owner = actor.uuid;
+        let Some(colony) = self.colonies.iter_mut().find(|c| c.owner == owner) else {
+            return Reply::say(vec![tr(lang, "You have no colony.", "У вас нет колонии.")]);
+        };
+        if !colony.research.contains("rally") {
+            return Reply::say(vec![tr(
+                lang,
+                "Research rally first. /colony research rally",
+                "Сначала исследуйте rally. /colony research rally",
+            )]);
+        }
+        let guards = colony.citizens.iter().filter(|c| c.job == Job::Guard).count();
+        if guards == 0 {
+            return Reply::say(vec![tr(
+                lang,
+                "No guards to call.",
+                "Звать некого: стражи нет.",
+            )]);
+        }
+        colony.rally_until = clock + 600;
+        colony.rally_at = [actor.x, actor.y, actor.z];
+        self.dirty = true;
+        Reply::say(vec![tr(
+            lang,
+            &format!("You have rallied your army. {guards} guards are answering your call."),
+            &format!("Вы собрали войско. На зов идут стражников: {guards}."),
+        )])
+    }
+
+    fn whereami(&self, actor: &Actor) -> String {
+        let lang = self.lang;
+        let mut best: Option<(&Colony, i64)> = None;
+        for colony in &self.colonies {
+            if colony.dimension != actor.dimension {
+                continue;
+            }
+            let distance = dist2(colony.center, [actor.x, actor.y, actor.z]);
+            if best.is_none_or(|(_, have)| distance < have) {
+                best = Some((colony, distance));
+            }
+        }
+        let Some((colony, distance)) = best else {
+            return tr(lang, "No colony in this dimension.", "В этом измерении нет колонии.");
+        };
+        let blocks = (distance as f64).sqrt().round() as i64;
+        tr(
+            lang,
+            &format!("{} is {blocks} blocks away.", colony.name),
+            &format!("До колонии {} {blocks} блоков.", colony.name),
+        )
+    }
+
+    fn home(&mut self, actor: &Actor) -> Reply {
+        let lang = self.lang;
+        let Some(colony) = self.colonies.iter().find(|c| c.owner == actor.uuid) else {
+            return Reply::say(vec![tr(lang, "You have no colony.", "У вас нет колонии.")]);
+        };
+        let [x, y, z] = colony.center;
+        Reply::say(vec![tr(
+            lang,
+            &format!("Town hall door: {x} {y} {z}."),
+            &format!("Дверь ратуши: {x} {y} {z}."),
+        )])
     }
 
     fn deposit_order(&mut self, actor: &Actor) -> Reply {
@@ -1144,6 +1516,32 @@ impl World {
         if colony.research.contains(node.id) {
             return Reply::say(vec![tr(lang, "Already researched.", "Уже исследовано.")]);
         }
+        if node.needs_university && !finished(colony, Kind::University) {
+            return Reply::say(vec![tr(
+                lang,
+                "Build a university first. /colony build university",
+                "Сначала постройте университет. /colony build university",
+            )]);
+        }
+        if let Some(kind) = node.needs_building {
+            if !finished(colony, kind) {
+                return Reply::say(vec![tr(
+                    lang,
+                    &format!("Finish the {} first.", kind_label(lang, kind)),
+                    &format!("Сначала достройте «{}».", kind_label(lang, kind)),
+                )]);
+            }
+        }
+        if node.min_builder > 0 {
+            let level = building_level(colony, Kind::Builder);
+            if level < node.min_builder {
+                return Reply::say(vec![tr(
+                    lang,
+                    &format!("The builder's hut must be level {}.", node.min_builder),
+                    &format!("Хижина строителя должна быть {} уровня.", node.min_builder),
+                )]);
+            }
+        }
         for (item, cost) in node.cost {
             if colony.stock.get(*item).copied().unwrap_or(0) < *cost {
                 return Reply::say(vec![tr(
@@ -1157,19 +1555,29 @@ impl World {
             pay(&mut colony.stock, item, *cost);
         }
         colony.research.insert(node.id.to_owned());
+        if node.id == "far_village" {
+            colony.pop_bonus = colony.pop_bonus.saturating_add(8);
+            fill_beds(colony);
+        }
+        if node.id == "plaster" {
+            for citizen in &mut colony.citizens {
+                citizen.wounded = false;
+            }
+            colony.happiness = (colony.happiness + 10).min(90);
+        }
         self.dirty = true;
+        let detail = match node.unlocks {
+            Some(kind) => tr(
+                lang,
+                &format!("You can build the {}.", kind_label(lang, kind)),
+                &format!("Можно строить «{}».", kind_label(lang, kind)),
+            ),
+            None => node.blurb.to_owned(),
+        };
         Reply::say(vec![tr(
             lang,
-            &format!(
-                "Researched {}. You can build the {}.",
-                node.id,
-                kind_label(lang, node.unlocks)
-            ),
-            &format!(
-                "Исследовано {}. Можно строить «{}».",
-                node.id,
-                kind_label(lang, node.unlocks)
-            ),
+            &format!("Researched {}. {detail}", node.id),
+            &format!("Исследовано {}. {detail}", node.id),
         )])
     }
 
@@ -1347,7 +1755,8 @@ fn size_of(kind: Kind) -> (i32, i32, i32) {
     match kind {
         Kind::TownHall => (7, 7, 5),
         Kind::Warehouse => (7, 5, 4),
-        Kind::GuardTower => (5, 5, 6),
+        Kind::GuardTower | Kind::Barracks => (5, 5, 6),
+        Kind::University | Kind::Library => (7, 5, 4),
         _ => (5, 5, 4),
     }
 }
@@ -1469,6 +1878,14 @@ fn hut_block(kind: Kind) -> &'static str {
         Kind::GuardTower => "minecolonies:blockhutguardtower",
         Kind::Tavern => "minecolonies:blockhuttavern",
         Kind::Courier => "minecolonies:blockhutdeliveryman",
+        Kind::Fisher => "minecolonies:blockhutfisherman",
+        Kind::Sawmill => "minecolonies:blockhutsawmill",
+        Kind::Bakery => "minecolonies:blockhutbaker",
+        Kind::Restaurant => "minecolonies:blockhutrestaurant",
+        Kind::University => "minecolonies:blockhutuniversity",
+        Kind::Library => "minecolonies:blockhutlibrary",
+        Kind::Hospital => "minecolonies:blockhuthospital",
+        Kind::Barracks => "minecolonies:blockhutbarracks",
     }
 }
 
@@ -1495,44 +1912,88 @@ fn add_citizen(colony: &mut Colony, job: Job) {
         id,
         name,
         job,
+        skill: skill_four(),
+        secondary: skill_two(),
+        role: GuardRole::Knight,
+        wounded: false,
         entity: None,
     });
 }
 
 fn fill_beds(colony: &mut Colony) {
-    while colony.citizens.len() < beds(colony) && colony.citizens.len() < MAX_CITIZENS {
+    while colony.citizens.len() < citizen_cap(colony) {
         add_citizen(colony, Job::Unemployed);
     }
 }
 
 fn beds(colony: &Colony) -> usize {
-    colony
+    let from_huts = colony
         .buildings
         .iter()
         .filter(|b| done(b))
         .map(|b| match b.kind {
-            Kind::TownHall | Kind::Residence => 2,
+            Kind::TownHall => 4,
+            Kind::Residence => 2,
             _ => 0,
         })
-        .sum()
+        .sum::<usize>();
+    from_huts + colony.pop_bonus as usize
 }
 
-fn mood(colony: &Colony) -> i32 {
+fn citizen_cap(colony: &Colony) -> usize {
+    beds(colony).min(MAX_CITIZENS)
+}
+
+fn mood(colony: &Colony, _clock: u64) -> i32 {
     let mut score = colony.happiness;
-    if colony
-        .buildings
-        .iter()
-        .any(|b| b.kind == Kind::Tavern && done(b))
-    {
+    if finished(colony, Kind::Tavern) {
         score += 10;
+    }
+    if finished(colony, Kind::Restaurant) {
+        score += 5;
     }
     let homeless = colony.citizens.len().saturating_sub(beds(colony)) as i32;
     score -= homeless * 8;
+    match colony.meals.len() {
+        0 => {}
+        1 => score -= 4,
+        2 => score += 4,
+        _ => score += 10,
+    }
+    let homes = colony
+        .buildings
+        .iter()
+        .filter(|b| b.kind == Kind::Residence && done(b))
+        .map(|b| b.level)
+        .collect::<Vec<_>>();
+    if !homes.is_empty() {
+        let average = homes.iter().sum::<u32>() / homes.len() as u32;
+        score += average as i32 * 3;
+    }
+    let people = colony.citizens.len();
+    let guards = colony.citizens.iter().filter(|c| c.job == Job::Guard).count();
+    if people >= 3 {
+        if guards.saturating_mul(3) >= people.saturating_mul(2) {
+            score += 10;
+        } else {
+            score -= 8;
+        }
+    }
+    if colony.citizens.iter().any(|c| c.wounded) {
+        score -= 12;
+    }
+    if colony.mourning_until != 0 {
+        score -= 15;
+    }
     score.clamp(10, 100)
 }
 
 fn step(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>) -> bool {
     let mut dirty = false;
+    if colony.mourning_until != 0 && clock >= colony.mourning_until {
+        colony.mourning_until = 0;
+        dirty = true;
+    }
     if let Some(raid) = &mut colony.raid {
         if raid.mobs.len() != raid.wanted as usize {
             raid.mobs.resize(raid.wanted as usize, None);
@@ -1551,10 +2012,27 @@ fn step(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>) -> b
             dirty = true;
         }
     }
+    if finished(colony, Kind::Tavern)
+        && clock % 400 == 0
+        && colony.visitors.len() < 3
+        && colony.citizens.len() >= 2
+    {
+        push_visitor(colony);
+        dirty = true;
+    }
+    if finished(colony, Kind::Hospital) {
+        let hurt = colony.citizens.iter().any(|c| c.wounded);
+        if hurt {
+            for citizen in &mut colony.citizens {
+                citizen.wounded = false;
+            }
+            colony.happiness = (colony.happiness + 4).min(90);
+            dirty = true;
+        }
+    }
     if colony.raid.is_none()
         && clock >= colony.next_raid
-        && colony.citizens.len() >= 2
-        && colony.buildings.iter().filter(|b| done(b)).count() >= 2
+        && colony.citizens.len() >= 7
     {
         begin_raid(colony, clock, lang, out);
         dirty = true;
@@ -1565,7 +2043,7 @@ fn step(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>) -> b
     ensure_mobs(colony, lang, out);
     if clock >= colony.next_walk {
         colony.next_walk = clock + 15;
-        walk(colony, out);
+        walk(colony, clock, out);
     }
     dirty
 }
@@ -1634,7 +2112,7 @@ fn place_work(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>
         .collect();
     colony.buildings[index].inflight = true;
     if kind != Kind::TownHall {
-        colony.next_build = clock + pace(colony);
+        colony.next_build = clock + pace(colony, clock);
     }
     out.push(Intent::Place {
         colony: colony.id,
@@ -1643,14 +2121,19 @@ fn place_work(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>
     });
 }
 
-fn pace(colony: &Colony) -> u64 {
+fn pace(colony: &Colony, clock: u64) -> u64 {
     let courier = colony.citizens.iter().any(|c| c.job == Job::Courier)
         && colony
             .buildings
             .iter()
             .any(|b| b.kind == Kind::Courier && done(b));
-    let base = if courier { 8 } else { 14 };
-    let mood = mood(colony);
+    let mut base: u64 = if courier { 8 } else { 14 };
+    let builder = building_level(colony, Kind::Builder);
+    base = base.saturating_sub(u64::from(builder.saturating_sub(1)) * 2);
+    if colony.research.contains("haste") {
+        base = base.saturating_sub(4);
+    }
+    let mood = mood(colony, clock);
     if mood >= 80 {
         base
     } else if mood >= 50 {
@@ -1662,28 +2145,19 @@ fn pace(colony: &Colony) -> u64 {
 
 fn produce(colony: &mut Colony) -> bool {
     let mut changed = false;
-    let farmers = colony
-        .citizens
-        .iter()
-        .filter(|c| c.job == Job::Farmer)
-        .count() as u32;
-    let loggers = colony
-        .citizens
-        .iter()
-        .filter(|c| c.job == Job::Lumberjack)
-        .count() as u32;
-    let miners = colony
-        .citizens
-        .iter()
-        .filter(|c| c.job == Job::Miner)
-        .count() as u32;
-    if farmers > 0
-        && colony
-            .buildings
-            .iter()
-            .any(|b| b.kind == Kind::Farm && done(b))
-    {
-        add_stock(&mut colony.stock, "minecraft:wheat", farmers);
+    let farmers = workers(colony, Job::Farmer);
+    let loggers = workers(colony, Job::Lumberjack);
+    let miners = workers(colony, Job::Miner);
+    let farm_level = building_level(colony, Kind::Farm).max(1);
+    let lumber_level = building_level(colony, Kind::Lumberjack).max(1);
+    let mine_level = building_level(colony, Kind::Miner).max(1);
+    if farmers > 0 && finished(colony, Kind::Farm) {
+        add_stock(
+            &mut colony.stock,
+            "minecraft:wheat",
+            farmers * farm_level,
+        );
+        colony.meals.insert("wheat".into());
         let wheat = colony.stock.get("minecraft:wheat").copied().unwrap_or(0);
         if wheat >= 3 {
             pay(&mut colony.stock, "minecraft:wheat", 3);
@@ -1691,32 +2165,90 @@ fn produce(colony: &mut Colony) -> bool {
         }
         changed = true;
     }
-    if loggers > 0
-        && colony
-            .buildings
-            .iter()
-            .any(|b| b.kind == Kind::Lumberjack && done(b))
-    {
-        add_stock(&mut colony.stock, "minecraft:oak_log", loggers);
+    if loggers > 0 && finished(colony, Kind::Lumberjack) {
+        add_stock(
+            &mut colony.stock,
+            "minecraft:oak_log",
+            loggers * lumber_level,
+        );
         changed = true;
     }
-    if miners > 0
-        && colony
-            .buildings
-            .iter()
-            .any(|b| b.kind == Kind::Miner && done(b))
-    {
-        add_stock(&mut colony.stock, "minecraft:cobblestone", miners);
+    if miners > 0 && finished(colony, Kind::Miner) {
+        add_stock(
+            &mut colony.stock,
+            "minecraft:cobblestone",
+            miners * mine_level,
+        );
         colony.ore_tick = colony.ore_tick.wrapping_add(1);
         if colony.ore_tick % 5 == 0 {
             add_stock(&mut colony.stock, "minecraft:coal", 1);
         }
         if colony.ore_tick % 12 == 0 {
-            add_stock(&mut colony.stock, "minecraft:iron_ingot", 1);
+            add_stock(&mut colony.stock, "minecraft:iron_ingot", mine_level);
         }
         changed = true;
     }
+    let fishers = workers(colony, Job::Fisher);
+    if fishers > 0 && finished(colony, Kind::Fisher) {
+        let n = fishers * building_level(colony, Kind::Fisher).max(1);
+        add_stock(&mut colony.stock, "minecraft:cod", n);
+        colony.meals.insert("cod".into());
+        changed = true;
+    }
+    let sawyers = workers(colony, Job::Sawyer);
+    if sawyers > 0 && finished(colony, Kind::Sawmill) {
+        let logs = colony.stock.get("minecraft:oak_log").copied().unwrap_or(0);
+        let take = logs.min(sawyers * building_level(colony, Kind::Sawmill).max(1));
+        if take > 0 {
+            pay(&mut colony.stock, "minecraft:oak_log", take);
+            add_stock(&mut colony.stock, "minecraft:oak_planks", take * 2);
+            changed = true;
+        }
+    }
+    let bakers = workers(colony, Job::Baker);
+    if bakers > 0 && finished(colony, Kind::Bakery) {
+        let wheat = colony.stock.get("minecraft:wheat").copied().unwrap_or(0);
+        let take = wheat.min(bakers * building_level(colony, Kind::Bakery).max(1));
+        if take > 0 {
+            pay(&mut colony.stock, "minecraft:wheat", take);
+            add_stock(&mut colony.stock, "minecraft:bread", take);
+            colony.meals.insert("bread".into());
+            changed = true;
+        }
+    }
+    let cooks = workers(colony, Job::Cook);
+    if cooks > 0 && finished(colony, Kind::Restaurant) {
+        let bread = colony.stock.get("minecraft:bread").copied().unwrap_or(0);
+        let fish = colony.stock.get("minecraft:cod").copied().unwrap_or(0);
+        if bread > 0 && fish > 0 {
+            pay(&mut colony.stock, "minecraft:bread", 1);
+            pay(&mut colony.stock, "minecraft:cod", 1);
+            colony.meals.insert("feast".into());
+            colony.happiness = (colony.happiness + 2).min(90);
+            changed = true;
+        }
+    }
+    let cap = skill_cap(colony);
+    for citizen in &mut colony.citizens {
+        if citizen.job != Job::Unemployed && citizen.skill < cap {
+            citizen.skill = citizen.skill.saturating_add(1);
+            changed = true;
+        }
+    }
     changed
+}
+
+fn workers(colony: &Colony, job: Job) -> u32 {
+    let count = colony.citizens.iter().filter(|c| c.job == job).count() as u32;
+    let skill: u32 = colony
+        .citizens
+        .iter()
+        .filter(|c| c.job == job)
+        .map(|c| u32::from(c.skill))
+        .sum();
+    let count = count.max(1);
+    let bonus = 1 + skill / (20 * count);
+    (colony.citizens.iter().filter(|c| c.job == job).count() as u32) * bonus
 }
 
 fn add_stock(stock: &mut BTreeMap<String, u32>, item: &str, n: u32) {
@@ -1729,10 +2261,23 @@ fn feed(colony: &mut Colony, lang: Lang, out: &mut Vec<Intent>) -> bool {
         return false;
     }
     let need = (people + 1) / 2;
-    let have = colony.stock.get("minecraft:bread").copied().unwrap_or(0);
-    if have >= need {
+    let bread = colony.stock.get("minecraft:bread").copied().unwrap_or(0);
+    let cod = colony.stock.get("minecraft:cod").copied().unwrap_or(0);
+    let beef = colony.stock.get("minecraft:cooked_beef").copied().unwrap_or(0);
+    if bread >= need {
         pay(&mut colony.stock, "minecraft:bread", need);
+        colony.meals.insert("bread".into());
         colony.happiness = (colony.happiness + 2).min(90);
+        true
+    } else if cod >= need {
+        pay(&mut colony.stock, "minecraft:cod", need);
+        colony.meals.insert("cod".into());
+        colony.happiness = (colony.happiness + 1).min(90);
+        true
+    } else if beef >= need {
+        pay(&mut colony.stock, "minecraft:cooked_beef", need);
+        colony.meals.insert("beef".into());
+        colony.happiness = (colony.happiness + 3).min(90);
         true
     } else {
         colony.happiness = (colony.happiness - 4).max(20);
@@ -1758,11 +2303,11 @@ fn begin_raid(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>
         text: tr(
             lang,
             &format!(
-                "Raiders approach {}. Guards can turn them back.",
+                "Barbarians approach {}. Guards can turn them back.",
                 colony.name
             ),
             &format!(
-                "К {} подходят рейдеры. Стража может их отбить.",
+                "К {} подходят варвары. Стража может их отбить.",
                 colony.name
             ),
         ),
@@ -1770,6 +2315,8 @@ fn begin_raid(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>
 }
 
 fn raid_tick(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>) -> bool {
+    let tier = building_level(colony, Kind::GuardTower).max(1) as i32;
+    let drill = if colony.research.contains("drilling") { 2 } else { 1 };
     let Some(raid) = &mut colony.raid else {
         return false;
     };
@@ -1790,7 +2337,7 @@ fn raid_tick(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>)
                     colony.center[1] as f64,
                     colony.center[2] as f64 + f64::from(index) * 2.0,
                 ],
-                name: "Raider".to_owned(),
+                name: "Barbarian".to_owned(),
                 kind: "minecraft:pillager".to_owned(),
                 profession: String::new(),
                 tag: "mc_raider".to_owned(),
@@ -1805,7 +2352,16 @@ fn raid_tick(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>)
         .filter_map(|c| c.entity)
         .collect();
     if clock % 10 == 0 && !guards.is_empty() {
-        raid.hp -= 2 * guards.len() as i32;
+        let mut hit = 0;
+        for citizen in colony.citizens.iter().filter(|c| c.job == Job::Guard) {
+            let blow = match citizen.role {
+                GuardRole::Knight => 2,
+                GuardRole::Archer => 3,
+                GuardRole::Druid => 1,
+            };
+            hit += blow * tier * drill;
+        }
+        raid.hp -= hit;
         if let Some(target) = target {
             for entity in guards {
                 out.push(Intent::Attack {
@@ -1847,6 +2403,10 @@ fn raid_tick(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>)
             *value = *value * 9 / 10;
         }
         colony.happiness = (colony.happiness - 15).max(20);
+        colony.mourning_until = clock + RAID_EVERY;
+        if let Some(citizen) = colony.citizens.iter_mut().find(|c| !c.wounded) {
+            citizen.wounded = true;
+        }
         out.push(Intent::Talk {
             player: colony.owner,
             text: tr(
@@ -1884,12 +2444,16 @@ fn ensure_mobs(colony: &mut Colony, lang: Lang, out: &mut Vec<Intent>) {
     }
 }
 
-fn walk(colony: &Colony, out: &mut Vec<Intent>) {
+fn walk(colony: &Colony, clock: u64, out: &mut Vec<Intent>) {
     for citizen in &colony.citizens {
         let Some(entity) = citizen.entity else {
             continue;
         };
-        let post = post_of(colony, citizen.job);
+        let post = if citizen.job == Job::Guard && clock < colony.rally_until {
+            colony.rally_at
+        } else {
+            post_of(colony, citizen.job)
+        };
         out.push(Intent::Walk {
             dimension: colony.dimension.clone(),
             entity,
@@ -1906,6 +2470,10 @@ fn post_of(colony: &Colony, job: Job) -> [i32; 3] {
         Job::Miner => Some(Kind::Miner),
         Job::Courier => Some(Kind::Courier),
         Job::Guard => Some(Kind::GuardTower),
+        Job::Fisher => Some(Kind::Fisher),
+        Job::Sawyer => Some(Kind::Sawmill),
+        Job::Baker => Some(Kind::Bakery),
+        Job::Cook => Some(Kind::Restaurant),
         Job::Unemployed => Some(Kind::TownHall),
     };
     colony
@@ -1925,6 +2493,10 @@ fn profession(job: Job) -> &'static str {
         Job::Miner => "minecraft:armorer",
         Job::Courier => "minecraft:cartographer",
         Job::Guard => "minecraft:weaponsmith",
+        Job::Fisher => "minecraft:fisherman",
+        Job::Sawyer => "minecraft:fletcher",
+        Job::Baker => "minecraft:farmer",
+        Job::Cook => "minecraft:butcher",
         Job::Unemployed => "minecraft:nitwit",
     }
 }
@@ -1937,6 +2509,10 @@ fn job_kind(job: Job) -> Kind {
         Job::Miner => Kind::Miner,
         Job::Courier => Kind::Courier,
         Job::Guard => Kind::GuardTower,
+        Job::Fisher => Kind::Fisher,
+        Job::Sawyer => Kind::Sawmill,
+        Job::Baker => Kind::Bakery,
+        Job::Cook => Kind::Restaurant,
         Job::Unemployed => Kind::TownHall,
     }
 }
@@ -1960,6 +2536,14 @@ fn parse_kind(word: &str) -> Option<Kind> {
         "guardtower" | "guard" | "guard_tower" => Kind::GuardTower,
         "tavern" => Kind::Tavern,
         "courier" | "deliveryman" | "delivery" => Kind::Courier,
+        "fisher" | "fisherman" | "fishing" => Kind::Fisher,
+        "sawmill" | "saw" => Kind::Sawmill,
+        "bakery" | "baker" => Kind::Bakery,
+        "restaurant" | "cook" => Kind::Restaurant,
+        "university" => Kind::University,
+        "library" => Kind::Library,
+        "hospital" => Kind::Hospital,
+        "barracks" => Kind::Barracks,
         "townhall" | "town_hall" => Kind::TownHall,
         _ => return None,
     })
@@ -1973,6 +2557,10 @@ fn parse_job(word: &str) -> Option<Job> {
         "miner" | "mine" => Job::Miner,
         "courier" | "deliveryman" => Job::Courier,
         "guard" | "guardtower" => Job::Guard,
+        "fisher" | "fisherman" => Job::Fisher,
+        "sawyer" | "sawmill" => Job::Sawyer,
+        "baker" | "bakery" => Job::Baker,
+        "cook" | "chef" | "restaurant" => Job::Cook,
         "unemployed" | "none" | "fire" => Job::Unemployed,
         _ => return None,
     })
@@ -1980,56 +2568,222 @@ fn parse_job(word: &str) -> Option<Job> {
 
 struct Node {
     id: &'static str,
-    unlocks: Kind,
+    unlocks: Option<Kind>,
     cost: &'static [(&'static str, u32)],
+    needs_university: bool,
+    needs_building: Option<Kind>,
+    min_builder: u32,
+    blurb: &'static str,
+}
+
+fn node(
+    id: &'static str,
+    unlocks: Option<Kind>,
+    cost: &'static [(&'static str, u32)],
+    needs_university: bool,
+    needs_building: Option<Kind>,
+    min_builder: u32,
+    blurb: &'static str,
+) -> Node {
+    Node {
+        id,
+        unlocks,
+        cost,
+        needs_university,
+        needs_building,
+        min_builder,
+        blurb,
+    }
 }
 
 fn research_node(id: &str) -> Option<Node> {
     Some(match id {
-        "woodworking" => Node {
-            id: "woodworking",
-            unlocks: Kind::Lumberjack,
-            cost: &[("minecraft:oak_log", 16)],
-        },
-        "mining" => Node {
-            id: "mining",
-            unlocks: Kind::Miner,
-            cost: &[("minecraft:cobblestone", 32)],
-        },
-        "storage" => Node {
-            id: "storage",
-            unlocks: Kind::Warehouse,
-            cost: &[("minecraft:oak_planks", 16)],
-        },
-        "logistics" => Node {
-            id: "logistics",
-            unlocks: Kind::Courier,
-            cost: &[("minecraft:oak_planks", 16)],
-        },
-        "watching" => Node {
-            id: "watching",
-            unlocks: Kind::GuardTower,
-            cost: &[("minecraft:cobblestone", 16)],
-        },
-        "hospitality" => Node {
-            id: "hospitality",
-            unlocks: Kind::Tavern,
-            cost: &[("minecraft:bread", 8)],
-        },
+        "woodworking" => node(
+            "woodworking",
+            Some(Kind::Lumberjack),
+            &[("minecraft:oak_log", 16)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "mining" => node(
+            "mining",
+            Some(Kind::Miner),
+            &[("minecraft:cobblestone", 32)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "storage" => node(
+            "storage",
+            Some(Kind::Warehouse),
+            &[("minecraft:oak_planks", 16)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "logistics" => node(
+            "logistics",
+            Some(Kind::Courier),
+            &[("minecraft:oak_planks", 16)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "watching" => node(
+            "watching",
+            Some(Kind::GuardTower),
+            &[("minecraft:cobblestone", 16)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "hospitality" => node(
+            "hospitality",
+            Some(Kind::Tavern),
+            &[("minecraft:bread", 8)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "milling" => node(
+            "milling",
+            Some(Kind::Sawmill),
+            &[("minecraft:oak_log", 8)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "baking" => node(
+            "baking",
+            Some(Kind::Bakery),
+            &[("minecraft:wheat", 16)],
+            false,
+            None,
+            0,
+            "",
+        ),
+        "cooking" => node(
+            "cooking",
+            Some(Kind::Restaurant),
+            &[("minecraft:bread", 8)],
+            false,
+            Some(Kind::Tavern),
+            0,
+            "",
+        ),
+        "scholarship" => node(
+            "scholarship",
+            Some(Kind::Library),
+            &[("minecraft:oak_planks", 16)],
+            true,
+            None,
+            0,
+            "",
+        ),
+        "medicine" => node(
+            "medicine",
+            Some(Kind::Hospital),
+            &[("minecraft:bread", 8)],
+            false,
+            Some(Kind::Library),
+            0,
+            "",
+        ),
+        "training" => node(
+            "training",
+            Some(Kind::Barracks),
+            &[("minecraft:iron_ingot", 8)],
+            false,
+            Some(Kind::GuardTower),
+            0,
+            "",
+        ),
+        "haste" => node(
+            "haste",
+            None,
+            &[("minecraft:iron_ingot", 8)],
+            true,
+            None,
+            2,
+            "The builder works faster.",
+        ),
+        "drilling" => node(
+            "drilling",
+            None,
+            &[("minecraft:iron_ingot", 16)],
+            true,
+            Some(Kind::GuardTower),
+            0,
+            "Guards hit harder.",
+        ),
+        "far_village" => node(
+            "far_village",
+            None,
+            &[("minecraft:cooked_beef", 16)],
+            false,
+            None,
+            0,
+            "Eight more beds.",
+        ),
+        "plaster" => node(
+            "plaster",
+            None,
+            &[("minecraft:bread", 8)],
+            false,
+            Some(Kind::Library),
+            0,
+            "The wounded are treated.",
+        ),
+        "rally" => node(
+            "rally",
+            None,
+            &[("minecraft:oak_log", 4)],
+            false,
+            Some(Kind::GuardTower),
+            0,
+            "Guards answer /colony rally.",
+        ),
         _ => return None,
     })
 }
 
+fn research_ids() -> &'static [&'static str] {
+    &[
+        "woodworking",
+        "mining",
+        "storage",
+        "logistics",
+        "watching",
+        "hospitality",
+        "milling",
+        "baking",
+        "cooking",
+        "scholarship",
+        "medicine",
+        "training",
+        "haste",
+        "drilling",
+        "far_village",
+        "plaster",
+        "rally",
+    ]
+}
+
 fn research_for(kind: Kind) -> Option<&'static str> {
-    Some(match kind {
-        Kind::Lumberjack => "woodworking",
-        Kind::Miner => "mining",
-        Kind::Warehouse => "storage",
-        Kind::Courier => "logistics",
-        Kind::GuardTower => "watching",
-        Kind::Tavern => "hospitality",
-        Kind::TownHall | Kind::Builder | Kind::Residence | Kind::Farm => return None,
-    })
+    research_ids()
+        .iter()
+        .find_map(|id| {
+            let node = research_node(id)?;
+            (node.unlocks == Some(kind)).then_some(*id)
+        })
 }
 
 pub fn stock_alias(word: &str) -> Option<&'static str> {
@@ -2044,12 +2798,132 @@ pub fn stock_alias(word: &str) -> Option<&'static str> {
         "wheat" => "minecraft:wheat",
         "coal" => "minecraft:coal",
         "iron" | "iron_ingot" => "minecraft:iron_ingot",
+        "cod" | "fish" => "minecraft:cod",
+        "emerald" | "emeralds" => "minecraft:emerald",
+        "beef" | "steak" | "cooked_beef" => "minecraft:cooked_beef",
         _ => return None,
     })
 }
 
 fn short_item(item: &str) -> &str {
     item.rsplit_once(':').map(|(_, n)| n).unwrap_or(item)
+}
+
+fn finished(colony: &Colony, kind: Kind) -> bool {
+    colony.buildings.iter().any(|b| b.kind == kind && done(b))
+}
+
+fn building_level(colony: &Colony, kind: Kind) -> u32 {
+    colony
+        .buildings
+        .iter()
+        .filter(|b| b.kind == kind && done(b))
+        .map(|b| b.level)
+        .max()
+        .unwrap_or(0)
+}
+
+fn skill_cap(colony: &Colony) -> u8 {
+    let level = colony
+        .buildings
+        .iter()
+        .filter(|b| b.kind == Kind::Residence && done(b))
+        .map(|b| b.level)
+        .max()
+        .unwrap_or(0);
+    match level {
+        0 => 10,
+        1 => 20,
+        2 => 30,
+        3 => 40,
+        4 => 50,
+        _ => 99,
+    }
+}
+
+fn worker_cap(colony: &Colony, job: Job) -> usize {
+    match job {
+        Job::Builder => building_level(colony, Kind::Builder).max(1) as usize,
+        Job::Guard => {
+            let tower = building_level(colony, Kind::GuardTower).max(1);
+            let extra = if finished(colony, Kind::Barracks) {
+                building_level(colony, Kind::Barracks)
+            } else {
+                0
+            };
+            (tower + extra) as usize
+        }
+        Job::Courier => {
+            let level = building_level(colony, Kind::Warehouse);
+            if level == 0 { 1 } else { (level * 2) as usize }
+        }
+        Job::Unemployed => MAX_CITIZENS,
+        _ => 1,
+    }
+}
+
+fn tool_tier(level: u32) -> &'static str {
+    match level {
+        1 => "wood or gold",
+        2 => "stone",
+        3 => "iron",
+        4 => "diamond",
+        _ => "netherite",
+    }
+}
+
+fn parse_role(word: &str) -> Option<GuardRole> {
+    Some(match word {
+        "knight" | "melee" => GuardRole::Knight,
+        "archer" | "ranged" => GuardRole::Archer,
+        "druid" | "support" => GuardRole::Druid,
+        _ => return None,
+    })
+}
+
+fn role_label(role: GuardRole) -> &'static str {
+    match role {
+        GuardRole::Knight => "knight",
+        GuardRole::Archer => "archer",
+        GuardRole::Druid => "druid",
+    }
+}
+
+fn push_visitor(colony: &mut Colony) {
+    let used: BTreeSet<&str> = colony
+        .citizens
+        .iter()
+        .map(|c| c.name.as_str())
+        .chain(colony.visitors.iter().map(|v| v.name.as_str()))
+        .collect();
+    let name = NAMES
+        .iter()
+        .copied()
+        .find(|name| !used.contains(name))
+        .unwrap_or("Quinn");
+    colony.visitors.push(Visitor {
+        name: name.to_owned(),
+        skill: 8,
+    });
+}
+
+fn visitor_lines(colony: &Colony, lang: Lang) -> Vec<String> {
+    if colony.visitors.is_empty() {
+        return vec![tr(
+            lang,
+            "No visitors. A finished tavern draws them in.",
+            "Посетителей нет. Их приводит достроенная таверна.",
+        )];
+    }
+    let mut lines = vec![tr(
+        lang,
+        "Visitors (8 emeralds): /colony recruit <n>",
+        "Посетители (8 изумрудов): /colony recruit <n>",
+    )];
+    for (index, visitor) in colony.visitors.iter().enumerate() {
+        lines.push(format!("{}  {}  skill {}", index + 1, visitor.name, visitor.skill));
+    }
+    lines
 }
 
 fn kind_label(lang: Lang, kind: Kind) -> &'static str {
@@ -2074,6 +2948,22 @@ fn kind_label(lang: Lang, kind: Kind) -> &'static str {
         (Lang::Ru, Kind::Tavern) => "таверна",
         (Lang::En, Kind::Courier) => "courier's hut",
         (Lang::Ru, Kind::Courier) => "хижина курьера",
+        (Lang::En, Kind::Fisher) => "fisherman's hut",
+        (Lang::Ru, Kind::Fisher) => "хижина рыбака",
+        (Lang::En, Kind::Sawmill) => "sawmill",
+        (Lang::Ru, Kind::Sawmill) => "лесопилка",
+        (Lang::En, Kind::Bakery) => "bakery",
+        (Lang::Ru, Kind::Bakery) => "пекарня",
+        (Lang::En, Kind::Restaurant) => "restaurant",
+        (Lang::Ru, Kind::Restaurant) => "ресторан",
+        (Lang::En, Kind::University) => "university",
+        (Lang::Ru, Kind::University) => "университет",
+        (Lang::En, Kind::Library) => "library",
+        (Lang::Ru, Kind::Library) => "библиотека",
+        (Lang::En, Kind::Hospital) => "hospital",
+        (Lang::Ru, Kind::Hospital) => "больница",
+        (Lang::En, Kind::Barracks) => "barracks",
+        (Lang::Ru, Kind::Barracks) => "казармы",
     }
 }
 
@@ -2093,11 +2983,19 @@ fn job_label(lang: Lang, job: Job) -> &'static str {
         (Lang::Ru, Job::Courier) => "курьер",
         (Lang::En, Job::Guard) => "guard",
         (Lang::Ru, Job::Guard) => "стражник",
+        (Lang::En, Job::Fisher) => "fisherman",
+        (Lang::Ru, Job::Fisher) => "рыбак",
+        (Lang::En, Job::Sawyer) => "sawyer",
+        (Lang::Ru, Job::Sawyer) => "пильщик",
+        (Lang::En, Job::Baker) => "baker",
+        (Lang::Ru, Job::Baker) => "пекарь",
+        (Lang::En, Job::Cook) => "cook",
+        (Lang::Ru, Job::Cook) => "повар",
     }
 }
 
 fn snapshot(colony: &Colony, lang: Lang) -> String {
-    let mood = format!("{:.1}", mood(colony) as f32 / 10.0);
+    let mood = format!("{:.1}", mood(colony, 0) as f32 / 10.0);
     let line1 = format!("{}  {mood}", colony.name);
     let line2 = if let Some(building) = colony.buildings.iter().find(|b| !done(b)) {
         format!(
@@ -2159,7 +3057,22 @@ fn citizen_lines(colony: &Colony, lang: Lang) -> Vec<String> {
     colony
         .citizens
         .iter()
-        .map(|c| format!("{}  {}  {}", c.id, c.name, job_label(lang, c.job)))
+        .map(|c| {
+            let role = if c.job == Job::Guard {
+                format!(" {}", role_label(c.role))
+            } else {
+                String::new()
+            };
+            let hurt = if c.wounded { " !" } else { "" };
+            format!(
+                "{}  {}  {}{role}{hurt}  skill {}/{}",
+                c.id,
+                c.name,
+                job_label(lang, c.job),
+                c.skill,
+                skill_cap(colony)
+            )
+        })
         .collect()
 }
 
@@ -2176,16 +3089,9 @@ fn stock_lines(colony: &Colony, lang: Lang) -> Vec<String> {
 
 fn research_lines(colony: &Colony, lang: Lang) -> Vec<String> {
     let mut lines = vec![tr(lang, "Research", "Исследования")];
-    for id in [
-        "woodworking",
-        "mining",
-        "storage",
-        "logistics",
-        "watching",
-        "hospitality",
-    ] {
+    for id in research_ids() {
         let node = research_node(id).expect("node");
-        let mark = if colony.research.contains(id) {
+        let mark = if colony.research.contains(*id) {
             "✔"
         } else {
             "·"
@@ -2195,8 +3101,8 @@ fn research_lines(colony: &Colony, lang: Lang) -> Vec<String> {
     }
     lines.push(tr(
         lang,
-        "Builder, residence and farm need no research.",
-        "Строитель, дом и ферма не требуют исследования.",
+        "Builder, residence, farm, fisher and the university need no research. A hut cannot outlevel the builder's hut.",
+        "Строитель, дом, ферма, рыбак и университет не требуют исследования. Хижина не может быть выше хижины строителя.",
     ));
     lines
 }
@@ -2204,8 +3110,8 @@ fn research_lines(colony: &Colony, lang: Lang) -> Vec<String> {
 fn help_lines(lang: Lang) -> Vec<String> {
     vec![tr(
         lang,
-        " /colony found [name] · build <hut> · hire <id> <job> · deposit · withdraw <item> <n> · research [node] · raid · recall · abandon confirm",
-        " /colony found [имя] · build <хижина> · hire <id> <работа> · deposit · withdraw <предмет> <n> · research [узел] · raid · recall · abandon confirm",
+        " /colony found [name] · build <hut> · upgrade <hut> · hire <id> <job> · guard <id> knight|archer|druid · visitors · recruit <n> · rally · research [node] · home · whoami · whereami · deposit · withdraw <item> <n> · raid · recall · abandon confirm",
+        " /colony found [имя] · build <хижина> · upgrade <хижина> · hire <id> <работа> · guard <id> knight|archer|druid · visitors · recruit <n> · rally · research [узел] · home · whoami · whereami · deposit · withdraw <предмет> <n> · raid · recall · abandon confirm",
     )]
 }
 
@@ -2296,6 +3202,14 @@ mod tests {
             Kind::GuardTower,
             Kind::Tavern,
             Kind::Courier,
+            Kind::Fisher,
+            Kind::Sawmill,
+            Kind::Bakery,
+            Kind::Restaurant,
+            Kind::University,
+            Kind::Library,
+            Kind::Hospital,
+            Kind::Barracks,
         ] {
             let draft = layout(kind, [10, 64, 20], 0);
             assert!(
@@ -2320,7 +3234,7 @@ mod tests {
     }
 
     #[test]
-    fn founding_raises_a_town_hall_and_two_citizens() {
+    fn founding_raises_a_town_hall_and_four_citizens() {
         let mut world = World::new();
         let reply = world.command(&actor(7, 0, 0), "colony found Riverside");
         assert!(reply.handled);
@@ -2331,7 +3245,7 @@ mod tests {
             .buildings
             .iter()
             .any(|b| b.kind == Kind::TownHall && done(b)));
-        assert_eq!(colony.citizens.len(), 2);
+        assert_eq!(colony.citizens.len(), 4);
         assert!(colony.stock.get("minecraft:bread").copied().unwrap_or(0) >= 32);
         let again = world.command(&actor(7, 0, 0), "colony found Other");
         assert!(again.lines[0].contains("already") || again.lines[0].contains("уже"));
@@ -2381,6 +3295,76 @@ mod tests {
             .copied()
             .unwrap_or(0);
         assert!(after > before, "bread {before} -> {after}");
+    }
+
+    #[test]
+    fn the_builder_hut_caps_other_upgrades_and_a_house_raises_skill() {
+        let mut world = World::new();
+        world.command(&actor(7, 0, 0), "colony found A");
+        drive(&mut world, 5);
+        world.command(&actor(7, 8, 0), "colony build builder");
+        world.command(&actor(7, 0, 0), "colony hire 1 builder");
+        drive(&mut world, 2_500);
+        world.command(&actor(7, 0, 12), "colony build residence");
+        drive(&mut world, 2_500);
+        let blocked = world.command(&actor(7, 0, 0), "colony upgrade residence");
+        assert!(
+            blocked.lines[0].contains("builder") || blocked.lines[0].contains("строител"),
+            "{blocked:?}"
+        );
+        for _ in 0..4 {
+            world.colonies[0].stock.insert("minecraft:oak_planks".into(), 500);
+            world.colonies[0].stock.insert("minecraft:cobblestone".into(), 500);
+            world.colonies[0].stock.insert("minecraft:oak_log".into(), 500);
+            let reply = world.command(&actor(7, 0, 0), "colony upgrade builder");
+            assert!(reply.handled, "{reply:?}");
+        }
+        assert_eq!(building_level(owned(&world), Kind::Builder), 5);
+        let house = world.command(&actor(7, 0, 0), "colony upgrade residence");
+        assert!(house.lines[0].contains('2'), "{house:?}");
+        assert_eq!(skill_cap(owned(&world)), 30);
+    }
+
+    #[test]
+    fn a_tavern_visitor_joins_for_emeralds_and_a_fisher_lands_cod() {
+        let mut world = World::new();
+        world.command(&actor(7, 0, 0), "colony found A");
+        drive(&mut world, 5);
+        world.command(&actor(7, 8, 0), "colony build builder");
+        world.command(&actor(7, 0, 0), "colony hire 1 builder");
+        drive(&mut world, 2_500);
+        world.command(&actor(7, -8, 0), "colony build fisher");
+        drive(&mut world, 2_500);
+        assert!(finished(owned(&world), Kind::Fisher), "fisher hut");
+        world.colonies[0].visitors.clear();
+        push_visitor(&mut world.colonies[0]);
+        world.colonies[0].stock.insert("minecraft:emerald".into(), 8);
+        let joined = world.command(&actor(7, 0, 0), "colony recruit 1");
+        assert!(
+            joined.lines[0].contains("joins") || joined.lines[0].contains("остаётся"),
+            "{joined:?}"
+        );
+        let id = owned(&world).citizens.last().unwrap().id;
+        world.command(&actor(7, 0, 0), &format!("colony hire {id} fisher"));
+        world.colonies[0].next_work = 0;
+        drive(&mut world, 2);
+        assert!(owned(&world).stock.get("minecraft:cod").copied().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn raids_wait_until_seven_citizens() {
+        let mut world = World::new();
+        world.command(&actor(7, 0, 0), "colony found A");
+        drive(&mut world, 5);
+        world.colonies[0].next_raid = 0;
+        world.tick(OVERWORLD);
+        assert!(owned(&world).raid.is_none());
+        while world.colonies[0].citizens.len() < 7 {
+            add_citizen(&mut world.colonies[0], Job::Unemployed);
+        }
+        world.colonies[0].next_raid = 0;
+        world.tick(OVERWORLD);
+        assert!(owned(&world).raid.is_some());
     }
 
     #[test]

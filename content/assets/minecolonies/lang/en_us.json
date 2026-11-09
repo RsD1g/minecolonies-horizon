@@ -9,7 +9,17 @@
   "block.minecolonies.blockhutguardtower": "Guard Tower",
   "block.minecolonies.blockhuttavern": "Tavern",
   "block.minecolonies.blockhutdeliveryman": "Courier's Hut",
+  "block.minecolonies.blockhutfisherman": "Fisherman's Hut",
+  "block.minecolonies.blockhutsawmill": "Sawmill",
+  "block.minecolonies.blockhutbaker": "Bakery",
+  "block.minecolonies.blockhutrestaurant": "Restaurant",
+  "block.minecolonies.blockhutuniversity": "University",
+  "block.minecolonies.blockhutlibrary": "Library",
+  "block.minecolonies.blockhuthospital": "Hospital",
+  "block.minecolonies.blockhutbarracks": "Barracks",
   "item.minecolonies.supplycamp": "Supply Camp",
+  "item.minecolonies.supplyship": "Supply Ship",
   "item.minecolonies.buildtool": "Build Tool",
+  "item.minecolonies.rallybanner": "Rally Banner",
   "itemGroup.minecolonies.colony": "MineColonies"
 }

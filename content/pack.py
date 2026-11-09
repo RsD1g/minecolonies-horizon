@@ -19,6 +19,14 @@ HUTS = {
     "blockhutguardtower": ((96, 42, 42), (180, 180, 186), "Guard Tower", "Сторожевая башня", 28),
     "blockhuttavern": ((112, 48, 72), (212, 176, 92), "Tavern", "Таверна", 16),
     "blockhutdeliveryman": ((48, 92, 128), (220, 196, 120), "Courier's Hut", "Хижина курьера", 25),
+    "blockhutfisherman": ((36, 96, 128), (214, 206, 160), "Fisherman's Hut", "Хижина рыбака", 12),
+    "blockhutsawmill": ((120, 86, 48), (210, 176, 96), "Sawmill", "Лесопилка", 13),
+    "blockhutbaker": ((168, 112, 64), (232, 196, 140), "Bakery", "Пекарня", 14),
+    "blockhutrestaurant": ((140, 64, 48), (220, 180, 96), "Restaurant", "Ресторан", 15),
+    "blockhutuniversity": ((64, 72, 120), (196, 186, 150), "University", "Университет", 11),
+    "blockhutlibrary": ((92, 64, 48), (210, 190, 140), "Library", "Библиотека", 14),
+    "blockhuthospital": ((180, 180, 186), (120, 168, 160), "Hospital", "Больница", 3),
+    "blockhutbarracks": ((72, 78, 86), (160, 64, 48), "Barracks", "Казармы", 7),
 }
 
 
@@ -53,6 +61,12 @@ def item_icon(kind):
             if kind == "camp":
                 on = (5 <= y <= 12 and 3 <= x <= 12) or (y == 4 and 5 <= x <= 10) or (y == 3 and 7 <= x <= 8)
                 color = (146, 96, 48) if y >= 8 else (214, 186, 120)
+            elif kind == "ship":
+                on = (y in (8, 9) and 2 <= x <= 13) or (y == 7 and 4 <= x <= 11) or (x == 8 and 3 <= y <= 6)
+                color = (92, 64, 36) if y >= 8 else (186, 154, 92)
+            elif kind == "banner":
+                on = (x == 4 and 2 <= y <= 14) or (5 <= x <= 12 and 3 <= y <= 9)
+                color = (176, 48, 48) if x > 4 else (120, 78, 42)
             else:
                 on = (x in (7, 8) and 2 <= y <= 14) or (y in (3, 4) and 4 <= x <= 11)
                 color = (212, 170, 64) if y < 6 else (120, 78, 42)
@@ -135,7 +149,9 @@ def main():
     )
     for item, template, rarity, en_name, ru_name in (
         ("supplycamp", "minecraft:paper", "uncommon", "Supply Camp", "Лагерь снабжения"),
+        ("supplyship", "minecraft:paper", "uncommon", "Supply Ship", "Корабль снабжения"),
         ("buildtool", "minecraft:stick", "uncommon", "Build Tool", "Инструмент строительства"),
+        ("rallybanner", "minecraft:paper", "uncommon", "Rally Banner", "Знамя сбора"),
     ):
         write(
             f"data/minecolonies/horizon/item/{item}.json",
@@ -157,7 +173,8 @@ def main():
         )
         path = ROOT / f"assets/minecolonies/textures/item/{item}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(item_icon("camp" if item == "supplycamp" else "tool"))
+        icon = {"supplycamp": "camp", "supplyship": "ship", "rallybanner": "banner"}.get(item, "tool")
+        path.write_bytes(item_icon(icon))
         en[f"item.minecolonies.{item}"] = en_name
         ru[f"item.minecolonies.{item}"] = ru_name
 
@@ -179,16 +196,44 @@ def main():
             {
                 "type": "minecraft:crafting_shaped",
                 "category": "equipment",
-                "pattern": ["G", "S"],
-                "key": {"G": "minecraft:gold_ingot", "S": "minecraft:stick"},
+                "pattern": [" S ", "SLS", " S "],
+                "key": {"S": "minecraft:stick", "L": "minecraft:leather"},
                 "result": {"id": "minecolonies:buildtool", "count": 1},
+            },
+            indent=2,
+        ),
+    )
+    write(
+        "data/minecolonies/recipe/supplyship.json",
+        json.dumps(
+            {
+                "type": "minecraft:crafting_shaped",
+                "category": "misc",
+                "pattern": [" B ", "BBB", " B "],
+                "key": {"B": "minecraft:oak_boat"},
+                "result": {"id": "minecolonies:supplyship", "count": 1},
+            },
+            indent=2,
+        ),
+    )
+    write(
+        "data/minecolonies/recipe/rallybanner.json",
+        json.dumps(
+            {
+                "type": "minecraft:crafting_shaped",
+                "category": "misc",
+                "pattern": ["W", "S"],
+                "key": {"W": "minecraft:white_banner", "S": "minecraft:stick"},
+                "result": {"id": "minecolonies:rallybanner", "count": 1},
             },
             indent=2,
         ),
     )
     items = [f"minecolonies:{block}" for block in HUTS] + [
         "minecolonies:supplycamp",
+        "minecolonies:supplyship",
         "minecolonies:buildtool",
+        "minecolonies:rallybanner",
     ]
     write(
         "data/minecolonies/horizon/creative_tab/colony.json",

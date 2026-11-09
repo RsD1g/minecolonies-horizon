@@ -11,14 +11,15 @@ Java, Forge and Fabric jars do not run in Horizon. This project is two mods that
 1. Скрафтите лагерь снабжения: сундук, хлеб и дубовое бревно. Либо возьмите его во вкладке «МайнКолонии».
 2. Поставьте его в обычном мире. Дверь ратуши встанет на грань, по которой вы кликнули. В воздухе колония встаёт в пяти блоках перед вами.
 3. Ратуша поднимается сама. На складе уже есть доски, брёвна, булыжник, плиты, стекло, двери и хлеб.
-4. `/colony build builder` — чертёж хижины строителя перед вами. Назначьте жителя: `/colony citizens`, затем `/colony hire 1 builder`. Он кладёт по блоку за раз, пока на складе есть материал.
-5. Дальше: `warehouse`, `residence`, `farm`, и после исследований `lumberjack`, `miner`, `guardtower`, `tavern`, `courier`.
-6. Исследования: `/colony research`. Сдача и выдача склада: `/colony deposit` и `/colony withdraw planks 32`.
-7. Рейд: `/colony raid` или сам по себе через игровые сутки. Стража бьёт разбойников. Без стражи колония теряет часть склада.
+4. При основании приходят четверо жителей. `/colony build builder`, затем `/colony citizens` и `/colony hire 1 builder`. Строитель кладёт по блоку за раз, пока на складе есть материал. Уровень его хижины ограничивает улучшение остальных: `/colony upgrade builder`, затем `/colony upgrade <хижина>`. Хижина не поднимается выше 5 уровня.
+5. Дома дают места: ратуша на четверых, каждый дом ещё на двоих, домов четыре. `/colony build residence`. Навык жителя растёт, пока он работает, и упирается в уровень дома: без дома 10, дальше 20, 30, 40, 50 и 99.
+6. Еда и материалы: `farm`, `fisher`, после исследований `lumberjack`, `miner`, `sawmill`, `bakery`. Повар в `restaurant` готовит из хлеба и рыбы. Склад и курьеры: `warehouse`, `courier`. Число курьеров — уровень склада × 2. Сдача и выдача: `/colony deposit`, `/colony withdraw planks 32`.
+7. Таверна зовёт посетителей. `/colony visitors`, затем `/colony recruit 1` за 8 изумрудов со склада. Стража: `/colony hire <id> guard`, роль `/colony guard <id> knight|archer|druid`. После исследования `rally` знамя или `/colony rally` зовёт стражу к вам.
+8. Университет открывает исследования `haste`, `drilling`, `scholarship`. Список: `/colony research`. Рейд сам начинается, когда жителей семеро; `/colony raid` вызывает его раньше. Без стражи колония теряет часть склада, а один житель ранен, пока нет больницы.
 
 Язык чата и надпись справа сверху — в Options → Mods → MineColonies. По умолчанию английский; кнопка переключает на русский.
 
-Команды: `/colony help`, `found [имя]`, `info`, `citizens`, `warehouse`, `build`, `hire`, `deposit`, `withdraw`, `research`, `raid`, `recall`, `abandon confirm`.
+Команды: `/colony help`, `found [имя]`, `info`, `whoami`, `whereami`, `home`, `citizens`, `warehouse`, `build`, `upgrade`, `hire`, `guard`, `visitors`, `recruit`, `rally`, `deposit`, `withdraw`, `research`, `raid`, `recall`, `abandon confirm`.
 
 Чужой игрок не ломает блоки в радиусе 64 блоков от двери ратуши. Новая колония не встаёт ближе 128 блоков к чужой.
 

@@ -12,7 +12,17 @@
     "minecolonies:blockhutguardtower",
     "minecolonies:blockhuttavern",
     "minecolonies:blockhutdeliveryman",
+    "minecolonies:blockhutfisherman",
+    "minecolonies:blockhutsawmill",
+    "minecolonies:blockhutbaker",
+    "minecolonies:blockhutrestaurant",
+    "minecolonies:blockhutuniversity",
+    "minecolonies:blockhutlibrary",
+    "minecolonies:blockhuthospital",
+    "minecolonies:blockhutbarracks",
     "minecolonies:supplycamp",
-    "minecolonies:buildtool"
+    "minecolonies:supplyship",
+    "minecolonies:buildtool",
+    "minecolonies:rallybanner"
   ]
 }

@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "W",
+    "S"
+  ],
+  "key": {
+    "W": "minecraft:white_banner",
+    "S": "minecraft:stick"
+  },
+  "result": {
+    "id": "minecolonies:rallybanner",
+    "count": 1
+  }
+}
