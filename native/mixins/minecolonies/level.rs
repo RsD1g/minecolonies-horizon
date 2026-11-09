@@ -170,10 +170,9 @@ fn minecolonies_level(game: &mut crate::game::Game<'_>, dimension: &str) {
         tag: &str,
     ) -> Option<u32> {
         use horizon_world::nbt::{Compound, Tag};
-        let name: String = name.chars().filter(|c| *c != '"' && *c != '\\').collect();
-        let custom = format!(r#"{{"text":"{name}"}}"#);
         let mut nbt = Compound::new();
-        nbt.insert("CustomName".into(), Tag::String(custom.as_str().into()));
+        // Horizon draws CustomName as plain text. A JSON text component shows as the raw string.
+        nbt.insert("CustomName".into(), Tag::String(name.into()));
         nbt.insert("CustomNameVisible".into(), Tag::Byte(1));
         nbt.insert("PersistenceRequired".into(), Tag::Byte(1));
         nbt.insert("Tags".into(), Tag::List(vec![Tag::String(tag.into())]));
@@ -189,10 +188,8 @@ fn minecolonies_level(game: &mut crate::game::Game<'_>, dimension: &str) {
 
     fn rename(game: &mut crate::game::Game<'_>, dimension: &str, entity: u32, name: &str) {
         use horizon_world::nbt::{Compound, Tag};
-        let name: String = name.chars().filter(|c| *c != '"' && *c != '\\').collect();
-        let custom = format!(r#"{{"text":"{name}"}}"#);
         let mut nbt = Compound::new();
-        nbt.insert("CustomName".into(), Tag::String(custom.as_str().into()));
+        nbt.insert("CustomName".into(), Tag::String(name.into()));
         nbt.insert("CustomNameVisible".into(), Tag::Byte(1));
         let _ = game.native_merge_entity_nbt(dimension, entity, nbt);
     }
