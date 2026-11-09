@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "PPP",
+    "PCP",
+    "PPP"
+  ],
+  "key": {
+    "P": "minecraft:oak_planks",
+    "C": "minecraft:soul_sand"
+  },
+  "result": {
+    "id": "minecolonies:blockhutgraveyard",
+    "count": 1
+  }
+}

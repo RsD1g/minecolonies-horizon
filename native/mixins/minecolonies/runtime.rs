@@ -52,6 +52,28 @@ pub const GOODS: &[&str] = &[
     "minecraft:cod",
     "minecraft:emerald",
     "minecraft:cooked_beef",
+    "minecraft:gravel",
+    "minecraft:sand",
+    "minecraft:flint",
+    "minecraft:iron_nugget",
+    "minecraft:iron_sword",
+    "minecraft:arrow",
+    "minecraft:bone_meal",
+    "minecraft:cooked_porkchop",
+    "minecraft:chicken",
+    "minecraft:white_wool",
+    "minecraft:honey_bottle",
+    "minecraft:netherrack",
+    "minecraft:quartz",
+    "minecraft:poppy",
+    "minecraft:red_dye",
+    "minecraft:white_concrete",
+    "minecraft:stone",
+    "minecraft:rabbit",
+    "minecraft:carrot",
+    "minecraft:potato",
+    "minecraft:potion",
+    "minecraft:piston",
 ];
 
 const SUPPLY: &[(&str, u32)] = &[
@@ -251,6 +273,31 @@ pub enum Kind {
     Library,
     Hospital,
     Barracks,
+    Smeltery,
+    Stonemason,
+    Crusher,
+    Sifter,
+    Composter,
+    Blacksmith,
+    Fletcher,
+    Glassblower,
+    Cowboy,
+    Shepherd,
+    ChickenHerder,
+    SwineHerder,
+    RabbitHutch,
+    Beekeeper,
+    School,
+    Graveyard,
+    Alchemist,
+    Mechanic,
+    NetherWorker,
+    Plantation,
+    Florist,
+    Dyer,
+    ConcreteMixer,
+    Archery,
+    CombatAcademy,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -267,6 +314,28 @@ pub enum Job {
     Sawyer,
     Baker,
     Cook,
+    Smelter,
+    Mason,
+    Crusher,
+    Sifter,
+    Composter,
+    Blacksmith,
+    Fletcher,
+    Glassblower,
+    Cowboy,
+    Shepherd,
+    ChickenHerder,
+    SwineHerder,
+    RabbitHerder,
+    Beekeeper,
+    Teacher,
+    Alchemist,
+    Mechanic,
+    NetherWorker,
+    Planter,
+    Florist,
+    Dyer,
+    ConcreteMixer,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -791,6 +860,18 @@ impl World {
             "far_village",
             "plaster",
             "rally",
+            "smelting",
+            "masonry",
+            "crushing",
+            "sifting",
+            "smithing",
+            "fletching",
+            "glassblowing",
+            "husbandry",
+            "alchemy",
+            "mechanics",
+            "nether",
+            "concrete",
         ];
         let colony = self.colonies.iter().find(|colony| colony.owner == actor.uuid)?;
         ORDER
@@ -2177,6 +2258,31 @@ fn hut_block(kind: Kind) -> &'static str {
         Kind::Library => "minecolonies:blockhutlibrary",
         Kind::Hospital => "minecolonies:blockhuthospital",
         Kind::Barracks => "minecolonies:blockhutbarracks",
+        Kind::Smeltery => "minecolonies:blockhutsmeltery",
+        Kind::Stonemason => "minecolonies:blockhutstonemason",
+        Kind::Crusher => "minecolonies:blockhutcrusher",
+        Kind::Sifter => "minecolonies:blockhutsifter",
+        Kind::Composter => "minecolonies:blockhutcomposter",
+        Kind::Blacksmith => "minecolonies:blockhutblacksmith",
+        Kind::Fletcher => "minecolonies:blockhutfletcher",
+        Kind::Glassblower => "minecolonies:blockhutglassblower",
+        Kind::Cowboy => "minecolonies:blockhutcowboy",
+        Kind::Shepherd => "minecolonies:blockhutshepherd",
+        Kind::ChickenHerder => "minecolonies:blockhutchickenherder",
+        Kind::SwineHerder => "minecolonies:blockhutswineherder",
+        Kind::RabbitHutch => "minecolonies:blockhutrabbithutch",
+        Kind::Beekeeper => "minecolonies:blockhutbeekeeper",
+        Kind::School => "minecolonies:blockhutschool",
+        Kind::Graveyard => "minecolonies:blockhutgraveyard",
+        Kind::Alchemist => "minecolonies:blockhutalchemist",
+        Kind::Mechanic => "minecolonies:blockhutmechanic",
+        Kind::NetherWorker => "minecolonies:blockhutnetherworker",
+        Kind::Plantation => "minecolonies:blockhutplantation",
+        Kind::Florist => "minecolonies:blockhutflorist",
+        Kind::Dyer => "minecolonies:blockhutdyer",
+        Kind::ConcreteMixer => "minecolonies:blockhutconcretemixer",
+        Kind::Archery => "minecolonies:blockhutarchery",
+        Kind::CombatAcademy => "minecolonies:blockhutcombatacademy",
     }
 }
 
@@ -2424,6 +2530,9 @@ fn pace(colony: &Colony, clock: u64) -> u64 {
     if colony.research.contains("haste") {
         base = base.saturating_sub(4);
     }
+    if finished(colony, Kind::Mechanic) {
+        base = base.saturating_sub(2);
+    }
     let mood = mood(colony, clock);
     if mood >= 80 {
         base
@@ -2519,10 +2628,191 @@ fn produce(colony: &mut Colony) -> bool {
             changed = true;
         }
     }
+    changed |= craft(colony);
     let cap = skill_cap(colony);
     for citizen in &mut colony.citizens {
         if citizen.job != Job::Unemployed && citizen.skill < cap {
             citizen.skill = citizen.skill.saturating_add(1);
+            changed = true;
+        }
+    }
+    changed
+}
+
+struct Bench {
+    job: Job,
+    kind: Kind,
+    take: &'static [(&'static str, u32)],
+    give: &'static [(&'static str, u32)],
+}
+
+fn benches() -> &'static [Bench] {
+    &[
+        Bench {
+            job: Job::Smelter,
+            kind: Kind::Smeltery,
+            take: &[("minecraft:cobblestone", 8), ("minecraft:coal", 1)],
+            give: &[("minecraft:iron_ingot", 1)],
+        },
+        Bench {
+            job: Job::Smelter,
+            kind: Kind::Smeltery,
+            take: &[("minecraft:sand", 1), ("minecraft:coal", 1)],
+            give: &[("minecraft:glass", 1)],
+        },
+        Bench {
+            job: Job::Mason,
+            kind: Kind::Stonemason,
+            take: &[("minecraft:cobblestone", 4)],
+            give: &[("minecraft:stone", 1)],
+        },
+        Bench {
+            job: Job::Crusher,
+            kind: Kind::Crusher,
+            take: &[("minecraft:cobblestone", 1)],
+            give: &[("minecraft:gravel", 1)],
+        },
+        Bench {
+            job: Job::Sifter,
+            kind: Kind::Sifter,
+            take: &[("minecraft:gravel", 4)],
+            give: &[("minecraft:flint", 1), ("minecraft:iron_nugget", 1)],
+        },
+        Bench {
+            job: Job::Composter,
+            kind: Kind::Composter,
+            take: &[("minecraft:wheat", 4)],
+            give: &[("minecraft:bone_meal", 1)],
+        },
+        Bench {
+            job: Job::Blacksmith,
+            kind: Kind::Blacksmith,
+            take: &[("minecraft:iron_ingot", 2)],
+            give: &[("minecraft:iron_sword", 1)],
+        },
+        Bench {
+            job: Job::Fletcher,
+            kind: Kind::Fletcher,
+            take: &[("minecraft:flint", 1), ("minecraft:oak_planks", 1)],
+            give: &[("minecraft:arrow", 4)],
+        },
+        Bench {
+            job: Job::Glassblower,
+            kind: Kind::Glassblower,
+            take: &[("minecraft:gravel", 1)],
+            give: &[("minecraft:sand", 1)],
+        },
+        Bench {
+            job: Job::Cowboy,
+            kind: Kind::Cowboy,
+            take: &[],
+            give: &[("minecraft:cooked_beef", 1)],
+        },
+        Bench {
+            job: Job::Shepherd,
+            kind: Kind::Shepherd,
+            take: &[],
+            give: &[("minecraft:white_wool", 1)],
+        },
+        Bench {
+            job: Job::ChickenHerder,
+            kind: Kind::ChickenHerder,
+            take: &[],
+            give: &[("minecraft:chicken", 1)],
+        },
+        Bench {
+            job: Job::SwineHerder,
+            kind: Kind::SwineHerder,
+            take: &[],
+            give: &[("minecraft:cooked_porkchop", 1)],
+        },
+        Bench {
+            job: Job::RabbitHerder,
+            kind: Kind::RabbitHutch,
+            take: &[],
+            give: &[("minecraft:rabbit", 1)],
+        },
+        Bench {
+            job: Job::Beekeeper,
+            kind: Kind::Beekeeper,
+            take: &[],
+            give: &[("minecraft:honey_bottle", 1)],
+        },
+        Bench {
+            job: Job::Planter,
+            kind: Kind::Plantation,
+            take: &[],
+            give: &[("minecraft:carrot", 1), ("minecraft:potato", 1)],
+        },
+        Bench {
+            job: Job::Florist,
+            kind: Kind::Florist,
+            take: &[],
+            give: &[("minecraft:poppy", 1)],
+        },
+        Bench {
+            job: Job::Dyer,
+            kind: Kind::Dyer,
+            take: &[("minecraft:poppy", 1)],
+            give: &[("minecraft:red_dye", 1)],
+        },
+        Bench {
+            job: Job::ConcreteMixer,
+            kind: Kind::ConcreteMixer,
+            take: &[
+                ("minecraft:sand", 1),
+                ("minecraft:gravel", 1),
+                ("minecraft:red_dye", 1),
+            ],
+            give: &[("minecraft:white_concrete", 1)],
+        },
+        Bench {
+            job: Job::NetherWorker,
+            kind: Kind::NetherWorker,
+            take: &[],
+            give: &[("minecraft:netherrack", 1), ("minecraft:quartz", 1)],
+        },
+        Bench {
+            job: Job::Alchemist,
+            kind: Kind::Alchemist,
+            take: &[("minecraft:glass", 1), ("minecraft:honey_bottle", 1)],
+            give: &[("minecraft:potion", 1)],
+        },
+        Bench {
+            job: Job::Mechanic,
+            kind: Kind::Mechanic,
+            take: &[("minecraft:iron_ingot", 1), ("minecraft:oak_planks", 1)],
+            give: &[("minecraft:piston", 1)],
+        },
+    ]
+}
+
+fn craft(colony: &mut Colony) -> bool {
+    let mut changed = false;
+    for bench in benches() {
+        if !finished(colony, bench.kind) {
+            continue;
+        }
+        let hands = workers(colony, bench.job);
+        if hands == 0 {
+            continue;
+        }
+        let times = hands * building_level(colony, bench.kind).max(1);
+        let mut made = 0;
+        while made < times {
+            let ready = bench.take.iter().all(|(item, n)| {
+                colony.stock.get(*item).copied().unwrap_or(0) >= *n
+            });
+            if !ready {
+                break;
+            }
+            for (item, n) in bench.take {
+                pay(&mut colony.stock, item, *n);
+            }
+            for (item, n) in bench.give {
+                add_stock(&mut colony.stock, item, *n);
+            }
+            made += 1;
             changed = true;
         }
     }
@@ -2570,6 +2860,21 @@ fn feed(colony: &mut Colony, lang: Lang, out: &mut Vec<Intent>) -> bool {
         colony.meals.insert("beef".into());
         colony.happiness = (colony.happiness + 3).min(90);
         true
+    } else if colony.stock.get("minecraft:cooked_porkchop").copied().unwrap_or(0) >= need {
+        pay(&mut colony.stock, "minecraft:cooked_porkchop", need);
+        colony.meals.insert("pork".into());
+        colony.happiness = (colony.happiness + 2).min(90);
+        true
+    } else if colony.stock.get("minecraft:chicken").copied().unwrap_or(0) >= need {
+        pay(&mut colony.stock, "minecraft:chicken", need);
+        colony.meals.insert("chicken".into());
+        colony.happiness = (colony.happiness + 1).min(90);
+        true
+    } else if colony.stock.get("minecraft:honey_bottle").copied().unwrap_or(0) >= need {
+        pay(&mut colony.stock, "minecraft:honey_bottle", need);
+        colony.meals.insert("honey".into());
+        colony.happiness = (colony.happiness + 2).min(90);
+        true
     } else {
         colony.happiness = (colony.happiness - 4).max(20);
         out.push(Intent::Talk {
@@ -2608,6 +2913,10 @@ fn begin_raid(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>
 fn raid_tick(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>) -> bool {
     let tier = building_level(colony, Kind::GuardTower).max(1) as i32;
     let drill = if colony.research.contains("drilling") { 2 } else { 1 };
+    let armed = i32::from(colony.stock.get("minecraft:iron_sword").copied().unwrap_or(0) > 0);
+    let arrows = i32::from(colony.stock.get("minecraft:arrow").copied().unwrap_or(0) > 0);
+    let academy = i32::from(finished(colony, Kind::CombatAcademy));
+    let range = i32::from(finished(colony, Kind::Archery));
     let Some(raid) = &mut colony.raid else {
         return false;
     };
@@ -2646,8 +2955,8 @@ fn raid_tick(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>)
         let mut hit = 0;
         for citizen in colony.citizens.iter().filter(|c| c.job == Job::Guard) {
             let blow = match citizen.role {
-                GuardRole::Knight => 2,
-                GuardRole::Archer => 3,
+                GuardRole::Knight => 2 + academy + armed,
+                GuardRole::Archer => 3 + range + arrows,
                 GuardRole::Druid => 1,
             };
             hit += blow * tier * drill;
@@ -2694,7 +3003,12 @@ fn raid_tick(colony: &mut Colony, clock: u64, lang: Lang, out: &mut Vec<Intent>)
             *value = *value * 9 / 10;
         }
         colony.happiness = (colony.happiness - 15).max(20);
-        colony.mourning_until = clock + RAID_EVERY;
+        let mourn = if finished(colony, Kind::Graveyard) {
+            RAID_EVERY / 4
+        } else {
+            RAID_EVERY
+        };
+        colony.mourning_until = clock + mourn;
         if let Some(citizen) = colony.citizens.iter_mut().find(|c| !c.wounded) {
             citizen.wounded = true;
         }
@@ -2765,6 +3079,28 @@ fn post_of(colony: &Colony, job: Job) -> [i32; 3] {
         Job::Sawyer => Some(Kind::Sawmill),
         Job::Baker => Some(Kind::Bakery),
         Job::Cook => Some(Kind::Restaurant),
+        Job::Smelter => Some(Kind::Smeltery),
+        Job::Mason => Some(Kind::Stonemason),
+        Job::Crusher => Some(Kind::Crusher),
+        Job::Sifter => Some(Kind::Sifter),
+        Job::Composter => Some(Kind::Composter),
+        Job::Blacksmith => Some(Kind::Blacksmith),
+        Job::Fletcher => Some(Kind::Fletcher),
+        Job::Glassblower => Some(Kind::Glassblower),
+        Job::Cowboy => Some(Kind::Cowboy),
+        Job::Shepherd => Some(Kind::Shepherd),
+        Job::ChickenHerder => Some(Kind::ChickenHerder),
+        Job::SwineHerder => Some(Kind::SwineHerder),
+        Job::RabbitHerder => Some(Kind::RabbitHutch),
+        Job::Beekeeper => Some(Kind::Beekeeper),
+        Job::Teacher => Some(Kind::School),
+        Job::Alchemist => Some(Kind::Alchemist),
+        Job::Mechanic => Some(Kind::Mechanic),
+        Job::NetherWorker => Some(Kind::NetherWorker),
+        Job::Planter => Some(Kind::Plantation),
+        Job::Florist => Some(Kind::Florist),
+        Job::Dyer => Some(Kind::Dyer),
+        Job::ConcreteMixer => Some(Kind::ConcreteMixer),
         Job::Unemployed => Some(Kind::TownHall),
     };
     colony
@@ -2788,6 +3124,28 @@ fn profession(job: Job) -> &'static str {
         Job::Sawyer => "minecraft:fletcher",
         Job::Baker => "minecraft:farmer",
         Job::Cook => "minecraft:butcher",
+        Job::Smelter => "minecraft:toolsmith",
+        Job::Mason => "minecraft:mason",
+        Job::Crusher => "minecraft:armorer",
+        Job::Sifter => "minecraft:armorer",
+        Job::Composter => "minecraft:farmer",
+        Job::Blacksmith => "minecraft:weaponsmith",
+        Job::Fletcher => "minecraft:fletcher",
+        Job::Glassblower => "minecraft:toolsmith",
+        Job::Cowboy => "minecraft:butcher",
+        Job::Shepherd => "minecraft:shepherd",
+        Job::ChickenHerder => "minecraft:farmer",
+        Job::SwineHerder => "minecraft:butcher",
+        Job::RabbitHerder => "minecraft:farmer",
+        Job::Beekeeper => "minecraft:farmer",
+        Job::Teacher => "minecraft:librarian",
+        Job::Alchemist => "minecraft:cleric",
+        Job::Mechanic => "minecraft:toolsmith",
+        Job::NetherWorker => "minecraft:cleric",
+        Job::Planter => "minecraft:farmer",
+        Job::Florist => "minecraft:farmer",
+        Job::Dyer => "minecraft:shepherd",
+        Job::ConcreteMixer => "minecraft:mason",
         Job::Unemployed => "minecraft:nitwit",
     }
 }
@@ -2804,6 +3162,28 @@ fn job_kind(job: Job) -> Kind {
         Job::Sawyer => Kind::Sawmill,
         Job::Baker => Kind::Bakery,
         Job::Cook => Kind::Restaurant,
+        Job::Smelter => Kind::Smeltery,
+        Job::Mason => Kind::Stonemason,
+        Job::Crusher => Kind::Crusher,
+        Job::Sifter => Kind::Sifter,
+        Job::Composter => Kind::Composter,
+        Job::Blacksmith => Kind::Blacksmith,
+        Job::Fletcher => Kind::Fletcher,
+        Job::Glassblower => Kind::Glassblower,
+        Job::Cowboy => Kind::Cowboy,
+        Job::Shepherd => Kind::Shepherd,
+        Job::ChickenHerder => Kind::ChickenHerder,
+        Job::SwineHerder => Kind::SwineHerder,
+        Job::RabbitHerder => Kind::RabbitHutch,
+        Job::Beekeeper => Kind::Beekeeper,
+        Job::Teacher => Kind::School,
+        Job::Alchemist => Kind::Alchemist,
+        Job::Mechanic => Kind::Mechanic,
+        Job::NetherWorker => Kind::NetherWorker,
+        Job::Planter => Kind::Plantation,
+        Job::Florist => Kind::Florist,
+        Job::Dyer => Kind::Dyer,
+        Job::ConcreteMixer => Kind::ConcreteMixer,
         Job::Unemployed => Kind::TownHall,
     }
 }
@@ -2835,6 +3215,31 @@ fn parse_kind(word: &str) -> Option<Kind> {
         "library" => Kind::Library,
         "hospital" => Kind::Hospital,
         "barracks" => Kind::Barracks,
+        "smeltery" | "smelter" => Kind::Smeltery,
+        "stonemason" | "mason" => Kind::Stonemason,
+        "crusher" => Kind::Crusher,
+        "sifter" => Kind::Sifter,
+        "composter" | "compost" => Kind::Composter,
+        "blacksmith" | "smith" => Kind::Blacksmith,
+        "fletcher" => Kind::Fletcher,
+        "glassblower" | "glass" => Kind::Glassblower,
+        "cowboy" | "cowherd" => Kind::Cowboy,
+        "shepherd" => Kind::Shepherd,
+        "chickenherder" | "chicken" => Kind::ChickenHerder,
+        "swineherder" | "swine" => Kind::SwineHerder,
+        "rabbithutch" | "rabbit" => Kind::RabbitHutch,
+        "beekeeper" | "bee" => Kind::Beekeeper,
+        "school" => Kind::School,
+        "graveyard" => Kind::Graveyard,
+        "alchemist" => Kind::Alchemist,
+        "mechanic" => Kind::Mechanic,
+        "netherworker" | "nether" => Kind::NetherWorker,
+        "plantation" => Kind::Plantation,
+        "florist" => Kind::Florist,
+        "dyer" => Kind::Dyer,
+        "concretemixer" | "concrete" => Kind::ConcreteMixer,
+        "archery" => Kind::Archery,
+        "combatacademy" | "academy" => Kind::CombatAcademy,
         "townhall" | "town_hall" => Kind::TownHall,
         _ => return None,
     })
@@ -2860,6 +3265,31 @@ fn kind_word(kind: Kind) -> &'static str {
         Kind::Library => "library",
         Kind::Hospital => "hospital",
         Kind::Barracks => "barracks",
+        Kind::Smeltery => "smeltery",
+        Kind::Stonemason => "stonemason",
+        Kind::Crusher => "crusher",
+        Kind::Sifter => "sifter",
+        Kind::Composter => "composter",
+        Kind::Blacksmith => "blacksmith",
+        Kind::Fletcher => "fletcher",
+        Kind::Glassblower => "glassblower",
+        Kind::Cowboy => "cowboy",
+        Kind::Shepherd => "shepherd",
+        Kind::ChickenHerder => "chickenherder",
+        Kind::SwineHerder => "swineherder",
+        Kind::RabbitHutch => "rabbithutch",
+        Kind::Beekeeper => "beekeeper",
+        Kind::School => "school",
+        Kind::Graveyard => "graveyard",
+        Kind::Alchemist => "alchemist",
+        Kind::Mechanic => "mechanic",
+        Kind::NetherWorker => "netherworker",
+        Kind::Plantation => "plantation",
+        Kind::Florist => "florist",
+        Kind::Dyer => "dyer",
+        Kind::ConcreteMixer => "concretemixer",
+        Kind::Archery => "archery",
+        Kind::CombatAcademy => "combatacademy",
     }
 }
 
@@ -2876,6 +3306,28 @@ fn job_word(job: Job) -> &'static str {
         Job::Sawyer => "sawyer",
         Job::Baker => "baker",
         Job::Cook => "cook",
+        Job::Smelter => "smelter",
+        Job::Mason => "mason",
+        Job::Crusher => "crusher",
+        Job::Sifter => "sifter",
+        Job::Composter => "composter",
+        Job::Blacksmith => "blacksmith",
+        Job::Fletcher => "fletcher",
+        Job::Glassblower => "glassblower",
+        Job::Cowboy => "cowboy",
+        Job::Shepherd => "shepherd",
+        Job::ChickenHerder => "chickenherder",
+        Job::SwineHerder => "swineherder",
+        Job::RabbitHerder => "rabbitherder",
+        Job::Beekeeper => "beekeeper",
+        Job::Teacher => "teacher",
+        Job::Alchemist => "alchemist",
+        Job::Mechanic => "mechanic",
+        Job::NetherWorker => "netherworker",
+        Job::Planter => "planter",
+        Job::Florist => "florist",
+        Job::Dyer => "dyer",
+        Job::ConcreteMixer => "concretemixer",
     }
 }
 
@@ -2898,6 +3350,31 @@ fn placeable() -> &'static [Kind] {
         Kind::University,
         Kind::Library,
         Kind::Hospital,
+        Kind::Smeltery,
+        Kind::Stonemason,
+        Kind::Crusher,
+        Kind::Sifter,
+        Kind::Composter,
+        Kind::Blacksmith,
+        Kind::Fletcher,
+        Kind::Glassblower,
+        Kind::Cowboy,
+        Kind::Shepherd,
+        Kind::ChickenHerder,
+        Kind::SwineHerder,
+        Kind::RabbitHutch,
+        Kind::Beekeeper,
+        Kind::School,
+        Kind::Graveyard,
+        Kind::Alchemist,
+        Kind::Mechanic,
+        Kind::NetherWorker,
+        Kind::Plantation,
+        Kind::Florist,
+        Kind::Dyer,
+        Kind::ConcreteMixer,
+        Kind::Archery,
+        Kind::CombatAcademy,
     ]
 }
 
@@ -2921,6 +3398,28 @@ fn open_jobs(colony: &Colony) -> Vec<Job> {
         Job::Cook,
         Job::Courier,
         Job::Guard,
+        Job::Smelter,
+        Job::Mason,
+        Job::Crusher,
+        Job::Sifter,
+        Job::Composter,
+        Job::Blacksmith,
+        Job::Fletcher,
+        Job::Glassblower,
+        Job::Cowboy,
+        Job::Shepherd,
+        Job::ChickenHerder,
+        Job::SwineHerder,
+        Job::RabbitHerder,
+        Job::Beekeeper,
+        Job::Teacher,
+        Job::Alchemist,
+        Job::Mechanic,
+        Job::NetherWorker,
+        Job::Planter,
+        Job::Florist,
+        Job::Dyer,
+        Job::ConcreteMixer,
     ] {
         if colony.buildings.iter().any(|built| built.kind == job_kind(job)) {
             jobs.push(job);
@@ -2941,6 +3440,28 @@ fn parse_job(word: &str) -> Option<Job> {
         "sawyer" | "sawmill" => Job::Sawyer,
         "baker" | "bakery" => Job::Baker,
         "cook" | "chef" | "restaurant" => Job::Cook,
+        "smelter" | "smeltery" => Job::Smelter,
+        "mason" | "stonemason" => Job::Mason,
+        "crusher" => Job::Crusher,
+        "sifter" => Job::Sifter,
+        "composter" => Job::Composter,
+        "blacksmith" => Job::Blacksmith,
+        "fletcher" => Job::Fletcher,
+        "glassblower" => Job::Glassblower,
+        "cowboy" => Job::Cowboy,
+        "shepherd" => Job::Shepherd,
+        "chickenherder" => Job::ChickenHerder,
+        "swineherder" => Job::SwineHerder,
+        "rabbitherder" | "rabbit" => Job::RabbitHerder,
+        "beekeeper" => Job::Beekeeper,
+        "teacher" | "school" => Job::Teacher,
+        "alchemist" => Job::Alchemist,
+        "mechanic" => Job::Mechanic,
+        "netherworker" => Job::NetherWorker,
+        "planter" | "plantation" => Job::Planter,
+        "florist" => Job::Florist,
+        "dyer" => Job::Dyer,
+        "concretemixer" => Job::ConcreteMixer,
         "unemployed" | "none" | "fire" => Job::Unemployed,
         _ => return None,
     })
@@ -3131,6 +3652,114 @@ fn research_node(id: &str) -> Option<Node> {
             0,
             "Guards answer /colony rally.",
         ),
+        "smelting" => node(
+            "smelting",
+            Some(Kind::Smeltery),
+            &[("minecraft:coal", 16)],
+            false,
+            None,
+            0,
+            "Cobble and coal become iron. Sand and coal become glass.",
+        ),
+        "masonry" => node(
+            "masonry",
+            Some(Kind::Stonemason),
+            &[("minecraft:cobblestone", 32)],
+            false,
+            Some(Kind::Smeltery),
+            0,
+            "Cobble is cut into stone.",
+        ),
+        "crushing" => node(
+            "crushing",
+            Some(Kind::Crusher),
+            &[("minecraft:cobblestone", 16)],
+            false,
+            None,
+            0,
+            "Cobble is crushed into gravel.",
+        ),
+        "sifting" => node(
+            "sifting",
+            Some(Kind::Sifter),
+            &[("minecraft:gravel", 8)],
+            false,
+            Some(Kind::Crusher),
+            0,
+            "Gravel is sifted for flint and nuggets.",
+        ),
+        "smithing" => node(
+            "smithing",
+            Some(Kind::Blacksmith),
+            &[("minecraft:iron_ingot", 8)],
+            false,
+            Some(Kind::Smeltery),
+            0,
+            "Iron becomes swords for the guard.",
+        ),
+        "fletching" => node(
+            "fletching",
+            Some(Kind::Fletcher),
+            &[("minecraft:flint", 4)],
+            false,
+            None,
+            0,
+            "Flint and planks become arrows.",
+        ),
+        "glassblowing" => node(
+            "glassblowing",
+            Some(Kind::Glassblower),
+            &[("minecraft:gravel", 8)],
+            false,
+            None,
+            0,
+            "Gravel is washed into sand.",
+        ),
+        "husbandry" => node(
+            "husbandry",
+            Some(Kind::Cowboy),
+            &[("minecraft:wheat", 16)],
+            false,
+            None,
+            0,
+            "Herds, hutches and the apiary.",
+        ),
+        "alchemy" => node(
+            "alchemy",
+            Some(Kind::Alchemist),
+            &[("minecraft:glass", 8)],
+            false,
+            Some(Kind::Library),
+            0,
+            "Glass and honey become potions.",
+        ),
+        "mechanics" => node(
+            "mechanics",
+            Some(Kind::Mechanic),
+            &[("minecraft:iron_ingot", 8)],
+            false,
+            Some(Kind::Blacksmith),
+            0,
+            "The builder works a little faster.",
+        ),
+        "nether" => node(
+            "nether",
+            Some(Kind::NetherWorker),
+            &[("minecraft:cooked_beef", 8)],
+            true,
+            None,
+            0,
+            "Netherrack and quartz.",
+        ),
+        "concrete" => node(
+            "concrete",
+            Some(Kind::ConcreteMixer),
+            &[("minecraft:sand", 8)],
+            false,
+            Some(Kind::Dyer),
+            0,
+            "Sand, gravel and dye become concrete.",
+        ),
         _ => return None,
     })
 }
@@ -3154,16 +3783,34 @@ fn research_ids() -> &'static [&'static str] {
         "far_village",
         "plaster",
         "rally",
+        "smelting",
+        "masonry",
+        "crushing",
+        "sifting",
+        "smithing",
+        "fletching",
+        "glassblowing",
+        "husbandry",
+        "alchemy",
+        "mechanics",
+        "nether",
+        "concrete",
     ]
 }
 
 fn research_for(kind: Kind) -> Option<&'static str> {
-    research_ids()
-        .iter()
-        .find_map(|id| {
+    let shared = match kind {
+        Kind::Shepherd | Kind::ChickenHerder | Kind::SwineHerder | Kind::RabbitHutch | Kind::Beekeeper => {
+            Some("husbandry")
+        }
+        _ => None,
+    };
+    shared.or_else(|| {
+        research_ids().iter().find_map(|id| {
             let node = research_node(id)?;
             (node.unlocks == Some(kind)).then_some(*id)
         })
+    })
 }
 
 pub fn stock_alias(word: &str) -> Option<&'static str> {
@@ -3181,6 +3828,28 @@ pub fn stock_alias(word: &str) -> Option<&'static str> {
         "cod" | "fish" => "minecraft:cod",
         "emerald" | "emeralds" => "minecraft:emerald",
         "beef" | "steak" | "cooked_beef" => "minecraft:cooked_beef",
+        "gravel" => "minecraft:gravel",
+        "sand" => "minecraft:sand",
+        "flint" => "minecraft:flint",
+        "nugget" | "iron_nugget" => "minecraft:iron_nugget",
+        "sword" | "iron_sword" => "minecraft:iron_sword",
+        "arrow" | "arrows" => "minecraft:arrow",
+        "bonemeal" | "bone_meal" => "minecraft:bone_meal",
+        "pork" | "porkchop" => "minecraft:cooked_porkchop",
+        "chicken" => "minecraft:chicken",
+        "wool" => "minecraft:white_wool",
+        "honey" => "minecraft:honey_bottle",
+        "netherrack" => "minecraft:netherrack",
+        "quartz" => "minecraft:quartz",
+        "poppy" | "flower" => "minecraft:poppy",
+        "dye" | "red_dye" => "minecraft:red_dye",
+        "concrete" => "minecraft:white_concrete",
+        "carrot" | "carrots" => "minecraft:carrot",
+        "potato" | "potatoes" => "minecraft:potato",
+        "potion" => "minecraft:potion",
+        "piston" => "minecraft:piston",
+        "rabbit" => "minecraft:rabbit",
+        "stone_bricks" | "smooth_stone" => "minecraft:stone",
         _ => return None,
     })
 }
@@ -3211,13 +3880,18 @@ fn skill_cap(colony: &Colony) -> u8 {
         .map(|b| b.level)
         .max()
         .unwrap_or(0);
-    match level {
+    let cap: u8 = match level {
         0 => 10,
         1 => 20,
         2 => 30,
         3 => 40,
         4 => 50,
         _ => 99,
+    };
+    if finished(colony, Kind::School) {
+        cap.saturating_add(10).min(99)
+    } else {
+        cap
     }
 }
 
@@ -3344,6 +4018,56 @@ fn kind_label(lang: Lang, kind: Kind) -> &'static str {
         (Lang::Ru, Kind::Hospital) => "больница",
         (Lang::En, Kind::Barracks) => "barracks",
         (Lang::Ru, Kind::Barracks) => "казармы",
+        (Lang::En, Kind::Smeltery) => "smeltery",
+        (Lang::Ru, Kind::Smeltery) => "плавильня",
+        (Lang::En, Kind::Stonemason) => "stonemason",
+        (Lang::Ru, Kind::Stonemason) => "каменотёс",
+        (Lang::En, Kind::Crusher) => "crusher",
+        (Lang::Ru, Kind::Crusher) => "дробилка",
+        (Lang::En, Kind::Sifter) => "sifter",
+        (Lang::Ru, Kind::Sifter) => "сито",
+        (Lang::En, Kind::Composter) => "composter",
+        (Lang::Ru, Kind::Composter) => "компостер",
+        (Lang::En, Kind::Blacksmith) => "blacksmith",
+        (Lang::Ru, Kind::Blacksmith) => "кузница",
+        (Lang::En, Kind::Fletcher) => "fletcher",
+        (Lang::Ru, Kind::Fletcher) => "лучник-мастер",
+        (Lang::En, Kind::Glassblower) => "glassblower",
+        (Lang::Ru, Kind::Glassblower) => "стеклодув",
+        (Lang::En, Kind::Cowboy) => "cowboy",
+        (Lang::Ru, Kind::Cowboy) => "коровник",
+        (Lang::En, Kind::Shepherd) => "shepherd",
+        (Lang::Ru, Kind::Shepherd) => "пастух",
+        (Lang::En, Kind::ChickenHerder) => "chicken herder",
+        (Lang::Ru, Kind::ChickenHerder) => "курятник",
+        (Lang::En, Kind::SwineHerder) => "swineherder",
+        (Lang::Ru, Kind::SwineHerder) => "свинарник",
+        (Lang::En, Kind::RabbitHutch) => "rabbit hutch",
+        (Lang::Ru, Kind::RabbitHutch) => "крольчатник",
+        (Lang::En, Kind::Beekeeper) => "beekeeper",
+        (Lang::Ru, Kind::Beekeeper) => "пасека",
+        (Lang::En, Kind::School) => "school",
+        (Lang::Ru, Kind::School) => "школа",
+        (Lang::En, Kind::Graveyard) => "graveyard",
+        (Lang::Ru, Kind::Graveyard) => "кладбище",
+        (Lang::En, Kind::Alchemist) => "alchemist",
+        (Lang::Ru, Kind::Alchemist) => "алхимик",
+        (Lang::En, Kind::Mechanic) => "mechanic",
+        (Lang::Ru, Kind::Mechanic) => "механик",
+        (Lang::En, Kind::NetherWorker) => "nether miner",
+        (Lang::Ru, Kind::NetherWorker) => "шахтёр Незера",
+        (Lang::En, Kind::Plantation) => "plantation",
+        (Lang::Ru, Kind::Plantation) => "плантация",
+        (Lang::En, Kind::Florist) => "florist",
+        (Lang::Ru, Kind::Florist) => "цветовод",
+        (Lang::En, Kind::Dyer) => "dyer",
+        (Lang::Ru, Kind::Dyer) => "красильщик",
+        (Lang::En, Kind::ConcreteMixer) => "concrete mixer",
+        (Lang::Ru, Kind::ConcreteMixer) => "бетономешалка",
+        (Lang::En, Kind::Archery) => "archery",
+        (Lang::Ru, Kind::Archery) => "стрельбище",
+        (Lang::En, Kind::CombatAcademy) => "combat academy",
+        (Lang::Ru, Kind::CombatAcademy) => "боевая академия",
     }
 }
 
@@ -3371,6 +4095,50 @@ fn job_label(lang: Lang, job: Job) -> &'static str {
         (Lang::Ru, Job::Baker) => "пекарь",
         (Lang::En, Job::Cook) => "cook",
         (Lang::Ru, Job::Cook) => "повар",
+        (Lang::En, Job::Smelter) => "smelter",
+        (Lang::Ru, Job::Smelter) => "плавильщик",
+        (Lang::En, Job::Mason) => "mason",
+        (Lang::Ru, Job::Mason) => "каменщик",
+        (Lang::En, Job::Crusher) => "crusher",
+        (Lang::Ru, Job::Crusher) => "дробильщик",
+        (Lang::En, Job::Sifter) => "sifter",
+        (Lang::Ru, Job::Sifter) => "просеиватель",
+        (Lang::En, Job::Composter) => "composter",
+        (Lang::Ru, Job::Composter) => "компостник",
+        (Lang::En, Job::Blacksmith) => "blacksmith",
+        (Lang::Ru, Job::Blacksmith) => "кузнец",
+        (Lang::En, Job::Fletcher) => "fletcher",
+        (Lang::Ru, Job::Fletcher) => "лучных дел мастер",
+        (Lang::En, Job::Glassblower) => "glassblower",
+        (Lang::Ru, Job::Glassblower) => "стеклодув",
+        (Lang::En, Job::Cowboy) => "cowboy",
+        (Lang::Ru, Job::Cowboy) => "скотник",
+        (Lang::En, Job::Shepherd) => "shepherd",
+        (Lang::Ru, Job::Shepherd) => "пастух",
+        (Lang::En, Job::ChickenHerder) => "chicken herder",
+        (Lang::Ru, Job::ChickenHerder) => "птичник",
+        (Lang::En, Job::SwineHerder) => "swineherder",
+        (Lang::Ru, Job::SwineHerder) => "свинопас",
+        (Lang::En, Job::RabbitHerder) => "rabbit herder",
+        (Lang::Ru, Job::RabbitHerder) => "кроликовод",
+        (Lang::En, Job::Beekeeper) => "beekeeper",
+        (Lang::Ru, Job::Beekeeper) => "пасечник",
+        (Lang::En, Job::Teacher) => "teacher",
+        (Lang::Ru, Job::Teacher) => "учитель",
+        (Lang::En, Job::Alchemist) => "alchemist",
+        (Lang::Ru, Job::Alchemist) => "алхимик",
+        (Lang::En, Job::Mechanic) => "mechanic",
+        (Lang::Ru, Job::Mechanic) => "механик",
+        (Lang::En, Job::NetherWorker) => "nether miner",
+        (Lang::Ru, Job::NetherWorker) => "шахтёр Незера",
+        (Lang::En, Job::Planter) => "planter",
+        (Lang::Ru, Job::Planter) => "плантатор",
+        (Lang::En, Job::Florist) => "florist",
+        (Lang::Ru, Job::Florist) => "цветовод",
+        (Lang::En, Job::Dyer) => "dyer",
+        (Lang::Ru, Job::Dyer) => "красильщик",
+        (Lang::En, Job::ConcreteMixer) => "concrete mixer",
+        (Lang::Ru, Job::ConcreteMixer) => "бетонщик",
     }
 }
 
@@ -3570,6 +4338,31 @@ pub fn recipe_files() -> Vec<(String, String)> {
         ("blockhutlibrary", "minecraft:bookshelf"),
         ("blockhuthospital", "minecraft:glistering_melon_slice"),
         ("blockhutbarracks", "minecraft:iron_sword"),
+        ("blockhutsmeltery", "minecraft:furnace"),
+        ("blockhutstonemason", "minecraft:stone"),
+        ("blockhutcrusher", "minecraft:cobblestone"),
+        ("blockhutsifter", "minecraft:gravel"),
+        ("blockhutcomposter", "minecraft:composter"),
+        ("blockhutblacksmith", "minecraft:iron_ingot"),
+        ("blockhutfletcher", "minecraft:flint"),
+        ("blockhutglassblower", "minecraft:sand"),
+        ("blockhutcowboy", "minecraft:leather"),
+        ("blockhutshepherd", "minecraft:white_wool"),
+        ("blockhutchickenherder", "minecraft:egg"),
+        ("blockhutswineherder", "minecraft:porkchop"),
+        ("blockhutrabbithutch", "minecraft:rabbit"),
+        ("blockhutbeekeeper", "minecraft:honeycomb"),
+        ("blockhutschool", "minecraft:feather"),
+        ("blockhutgraveyard", "minecraft:soul_sand"),
+        ("blockhutalchemist", "minecraft:brewing_stand"),
+        ("blockhutmechanic", "minecraft:piston"),
+        ("blockhutnetherworker", "minecraft:netherrack"),
+        ("blockhutplantation", "minecraft:carrot"),
+        ("blockhutflorist", "minecraft:poppy"),
+        ("blockhutdyer", "minecraft:red_dye"),
+        ("blockhutconcretemixer", "minecraft:white_concrete_powder"),
+        ("blockhutarchery", "minecraft:bow"),
+        ("blockhutcombatacademy", "minecraft:shield"),
     ] {
         files.push(hut_recipe(block, center));
     }
@@ -3679,6 +4472,31 @@ mod tests {
             Kind::Library,
             Kind::Hospital,
             Kind::Barracks,
+            Kind::Smeltery,
+            Kind::Stonemason,
+            Kind::Crusher,
+            Kind::Sifter,
+            Kind::Composter,
+            Kind::Blacksmith,
+            Kind::Fletcher,
+            Kind::Glassblower,
+            Kind::Cowboy,
+            Kind::Shepherd,
+            Kind::ChickenHerder,
+            Kind::SwineHerder,
+            Kind::RabbitHutch,
+            Kind::Beekeeper,
+            Kind::School,
+            Kind::Graveyard,
+            Kind::Alchemist,
+            Kind::Mechanic,
+            Kind::NetherWorker,
+            Kind::Plantation,
+            Kind::Florist,
+            Kind::Dyer,
+            Kind::ConcreteMixer,
+            Kind::Archery,
+            Kind::CombatAcademy,
         ] {
             let draft = layout(kind, [10, 64, 20], 0);
             assert!(
@@ -4138,7 +4956,7 @@ mod tests {
     #[test]
     fn the_native_mod_ships_a_craft_for_every_item() {
         let files = recipe_files();
-        assert_eq!(files.len(), 21);
+        assert_eq!(files.len(), 46);
         let mut results = BTreeSet::new();
         for (id, json) in &files {
             let value: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -4151,6 +4969,26 @@ mod tests {
         assert!(results.contains("minecolonies:buildtool"));
         assert!(results.contains("minecolonies:blockhutbuilder"));
         assert!(results.contains("minecolonies:blockhutbarracks"));
+    }
+
+    #[test]
+    fn the_smelter_needs_research_and_then_makes_iron() {
+        let mut world = World::new();
+        let player = actor(7, 0, 0);
+        world.command(&player, "colony found A");
+        let denied = world.command(&player, "colony build smeltery");
+        assert!(denied.lines[0].contains("smelting"), "{denied:?}");
+        world.colonies[0].stock.insert("minecraft:coal".into(), 16);
+        world.command(&player, "colony research smelting");
+        assert!(owned(&world).research.contains("smelting"));
+        finish(&mut world.colonies[0], Kind::Smeltery, 1);
+        world.colonies[0].citizens[0].job = Job::Smelter;
+        world.colonies[0].stock.insert("minecraft:cobblestone".into(), 8);
+        world.colonies[0].stock.insert("minecraft:coal".into(), 1);
+        world.colonies[0].next_work = 0;
+        world.tick(OVERWORLD);
+        assert!(owned(&world).stock.get("minecraft:iron_ingot").copied().unwrap_or(0) >= 1);
+        assert_eq!(owned(&world).stock.get("minecraft:cobblestone").copied().unwrap_or(0), 0);
     }
 
     #[test]

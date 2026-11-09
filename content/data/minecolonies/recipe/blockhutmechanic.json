@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "PPP",
+    "PCP",
+    "PPP"
+  ],
+  "key": {
+    "P": "minecraft:oak_planks",
+    "C": "minecraft:piston"
+  },
+  "result": {
+    "id": "minecolonies:blockhutmechanic",
+    "count": 1
+  }
+}

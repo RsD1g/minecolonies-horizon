@@ -1,0 +1,9 @@
+{
+  "template": "minecraft:oak_planks",
+  "item": true,
+  "properties": {
+    "hardness": 2.0,
+    "sounds": "minecraft:wood",
+    "map_color": 3
+  }
+}
