@@ -597,7 +597,7 @@ impl World {
                 bar: true,
             });
         }
-        let line = self
+        let name = self
             .colonies
             .iter()
             .find(|colony| colony.owner == actor.uuid)
@@ -609,6 +609,11 @@ impl World {
                     .map(|citizen| citizen_title(self.lang, citizen))
             })
             .unwrap_or_default();
+        let line = tr(
+            self.lang,
+            &format!("{name}. The build tool assigns their work."),
+            &format!("{name}. Инструмент строительства назначает работу."),
+        );
         Some(Gesture {
             lines: vec![line],
             consume: None,
@@ -701,25 +706,13 @@ impl World {
             Kind::TownHall => {
                 self.with_colony(actor, |colony, lang| Reply::say(info_lines(colony, lang)))
             }
-            Kind::Tavern => {
-                let waiting = self
-                    .colonies
-                    .iter()
-                    .find(|colony| colony.owner == actor.uuid)
-                    .is_some_and(|colony| !colony.visitors.is_empty());
-                if waiting {
-                    self.recruit(actor, "1")
-                } else {
-                    self.upgrade(actor, kind_word(kind))
-                }
-            }
-            Kind::University => match self.next_research(actor) {
-                Some(id) => self.research(actor, id),
-                None => self.upgrade(actor, kind_word(kind)),
-            },
+            Kind::Tavern => self.upgrade_or(actor, kind, true),
+            Kind::University => self.upgrade_or(actor, kind, false),
             Kind::Warehouse => {
-                let mut reply = self.upgrade(actor, kind_word(kind));
-                let stock = self.with_colony(actor, |colony, lang| Reply::say(stock_lines(colony, lang)));
+                let reply = self.upgrade_or(actor, kind, false);
+                let stock =
+                    self.with_colony(actor, |colony, lang| Reply::say(stock_lines(colony, lang)));
+                let mut reply = reply;
                 reply.lines.extend(stock.lines);
                 reply
             }
@@ -730,6 +723,53 @@ impl World {
             consume: None,
             bar: false,
         }
+    }
+
+    /// Upgrade when the hut can rise. A tavern then recruits a waiting visitor,
+    /// and the university buys the next research, only when the level stays put.
+    fn upgrade_or(&mut self, actor: &Actor, kind: Kind, tavern: bool) -> Reply {
+        let before = self.hut_level(actor, kind);
+        let upgraded = self.upgrade(actor, kind_word(kind));
+        if self.hut_level(actor, kind) > before {
+            return upgraded;
+        }
+        if tavern {
+            let waiting = self
+                .colonies
+                .iter()
+                .find(|colony| colony.owner == actor.uuid)
+                .is_some_and(|colony| !colony.visitors.is_empty());
+            if waiting {
+                return self.recruit(actor, "1");
+            }
+            return upgraded;
+        }
+        let known = self.research_count(actor);
+        let Some(id) = self.next_research(actor) else {
+            return upgraded;
+        };
+        let researched = self.research(actor, id);
+        if self.research_count(actor) > known {
+            researched
+        } else {
+            upgraded
+        }
+    }
+
+    fn hut_level(&self, actor: &Actor, kind: Kind) -> u32 {
+        self.colonies
+            .iter()
+            .find(|colony| colony.owner == actor.uuid)
+            .map(|colony| building_level(colony, kind))
+            .unwrap_or(0)
+    }
+
+    fn research_count(&self, actor: &Actor) -> usize {
+        self.colonies
+            .iter()
+            .find(|colony| colony.owner == actor.uuid)
+            .map(|colony| colony.research.len())
+            .unwrap_or(0)
     }
 
     fn next_research(&self, actor: &Actor) -> Option<&'static str> {
@@ -3930,6 +3970,80 @@ mod tests {
             )
             .unwrap();
         assert!(again.consume.is_none());
+    }
+
+    fn finish(colony: &mut Colony, kind: Kind, level: u32) {
+        let id = colony.next_building;
+        colony.next_building += 1;
+        colony.buildings.push(Building {
+            id,
+            kind,
+            plan: vec![PlanBlock {
+                x: colony.center[0],
+                y: colony.center[1],
+                z: colony.center[2] + id as i32,
+                state: hut_block(kind).into(),
+                item: None,
+            }],
+            placed: 1,
+            post: colony.center,
+            level,
+            inflight: false,
+            tries: 0,
+        });
+    }
+
+    #[test]
+    fn a_hut_click_upgrades_before_it_recruits_or_researches() {
+        let mut world = World::new();
+        let player = actor(7, 0, 0);
+        world.command(&player, "colony found A");
+        finish(&mut world.colonies[0], Kind::Builder, 5);
+        finish(&mut world.colonies[0], Kind::Tavern, 1);
+        finish(&mut world.colonies[0], Kind::University, 5);
+        world.colonies[0].stock.insert("minecraft:oak_planks".into(), 500);
+        world.colonies[0].stock.insert("minecraft:cobblestone".into(), 500);
+        world.colonies[0].stock.insert("minecraft:oak_log".into(), 500);
+        world.colonies[0].stock.insert("minecraft:emerald".into(), 8);
+        push_visitor(&mut world.colonies[0]);
+        let guests = world.colonies[0].visitors.len();
+        let click = world
+            .gesture(
+                &player,
+                "minecolonies:buildtool",
+                Some(([3, 64, 3], [0, 1, 0])),
+                Some("minecolonies:blockhuttavern"),
+            )
+            .unwrap();
+        assert!(click.lines[0].contains('2'), "{click:?}");
+        assert_eq!(building_level(owned(&world), Kind::Tavern), 2);
+        assert_eq!(owned(&world).visitors.len(), guests);
+        world.colonies[0]
+            .buildings
+            .iter_mut()
+            .find(|b| b.kind == Kind::Tavern)
+            .unwrap()
+            .level = 5;
+        world
+            .gesture(
+                &player,
+                "minecolonies:buildtool",
+                Some(([3, 64, 3], [0, 1, 0])),
+                Some("minecolonies:blockhuttavern"),
+            )
+            .unwrap();
+        assert!(owned(&world).visitors.is_empty());
+        let logs = owned(&world).stock["minecraft:oak_log"];
+        world
+            .gesture(
+                &player,
+                "minecolonies:buildtool",
+                Some(([4, 64, 4], [0, 1, 0])),
+                Some("minecolonies:blockhutuniversity"),
+            )
+            .unwrap();
+        assert!(owned(&world).research.contains("woodworking"));
+        assert!(owned(&world).stock["minecraft:oak_log"] < logs);
     }
 
     #[test]
