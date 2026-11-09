@@ -27,7 +27,8 @@ fn minecolonies_interact(
         player.position,
         player.yaw,
     );
-    let item = stack.map(|stack| stack.item.as_str()).unwrap_or("");
+    // `item` is already a string reference. `str::as_str` is still unstable on the launcher's Rust 1.99.
+    let item = stack.map(|stack| stack.item.as_ref()).unwrap_or("");
     let Some(gesture) = m::gesture_entity(&actor, entity as u32, item) else {
         return;
     };
