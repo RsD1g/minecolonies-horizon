@@ -24,7 +24,7 @@ fn minecolonies_use_on(
         player.position,
         player.yaw,
     );
-    if stack.item == "minecolonies:scantool" {
+    if stack.item.as_ref() == "minecolonies:scantool" {
         let touch = m::with_world(|world| world.scan_touch(&actor, Some(pos)));
         if let m::ScanTouch::Read { from, to } = touch {
             let mut cells = Vec::new();

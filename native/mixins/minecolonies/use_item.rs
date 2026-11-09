@@ -22,7 +22,7 @@ fn minecolonies_use_item(
         player.position,
         player.yaw,
     );
-    if stack.item == "minecolonies:scantool" {
+    if stack.item.as_ref() == "minecolonies:scantool" {
         let touch = m::with_world(|world| world.scan_touch(&actor, None));
         let lang = m::Lang::parse(game.native_setting(m::ID, "lang").as_deref());
         game.native_feedback(horizon_client::text::Text::literal(m::scan_message(&touch, lang)));
