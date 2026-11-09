@@ -2,9 +2,10 @@
 fn minecolonies_gui_click(
     block: &str,
     at: [f32; 2],
-    _right: bool,
+    right: bool,
     button: &mut Option<i32>,
 ) {
+    let _ = right;
     let id = block.split('[').next().unwrap_or(block);
     if id != "minecolonies:ledger" {
         return;
