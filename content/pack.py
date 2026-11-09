@@ -216,6 +216,39 @@ def main():
             indent=2,
         ),
     )
+    centers = {
+        "blockhutbuilder": "minecraft:oak_door",
+        "blockhutwarehouse": "minecraft:barrel",
+        "blockhutcitizen": "minecraft:chest",
+        "blockhutfarmer": "minecraft:wooden_hoe",
+        "blockhutlumberjack": "minecraft:wooden_axe",
+        "blockhutminer": "minecraft:wooden_pickaxe",
+        "blockhutguardtower": "minecraft:wooden_sword",
+        "blockhuttavern": "minecraft:red_bed",
+        "blockhutdeliveryman": "minecraft:string",
+        "blockhutfisherman": "minecraft:fishing_rod",
+        "blockhutsawmill": "minecraft:iron_axe",
+        "blockhutbaker": "minecraft:wheat",
+        "blockhutrestaurant": "minecraft:bread",
+        "blockhutuniversity": "minecraft:book",
+        "blockhutlibrary": "minecraft:bookshelf",
+        "blockhuthospital": "minecraft:glistering_melon_slice",
+        "blockhutbarracks": "minecraft:iron_sword",
+    }
+    for block, center in centers.items():
+        write(
+            f"data/minecolonies/recipe/{block}.json",
+            json.dumps(
+                {
+                    "type": "minecraft:crafting_shaped",
+                    "category": "building",
+                    "pattern": ["PPP", "PCP", "PPP"],
+                    "key": {"P": "minecraft:oak_planks", "C": center},
+                    "result": {"id": f"minecolonies:{block}", "count": 1},
+                },
+                indent=2,
+            ),
+        )
     write(
         "data/minecolonies/recipe/rallybanner.json",
         json.dumps(

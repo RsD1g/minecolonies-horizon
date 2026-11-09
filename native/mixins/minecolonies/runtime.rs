@@ -140,46 +140,28 @@ pub fn actor_of(uuid: u128, name: &str, dimension: &str, position: [f64; 3], yaw
     }
 }
 
-/// What a right-click with one of our items should do. The hook applies it.
-pub enum Held {
-    Ignore,
-    Tool,
-    Camp {
-        lines: Vec<String>,
-        consume: bool,
-        item: &'static str,
-    },
-    Rally { lines: Vec<String> },
+/// A right-click the hooks should show and, when set, take one of `consume`.
+#[derive(Clone, Debug)]
+pub struct Gesture {
+    pub lines: Vec<String>,
+    pub consume: Option<&'static str>,
+    /// One short line for the action bar. Chat still gets `lines` when this is false.
+    pub bar: bool,
 }
 
-pub fn held(actor: &Actor, item: &str, clicked: Option<([i32; 3], [i32; 3])>) -> Held {
-    if item == "minecolonies:buildtool" {
-        return Held::Tool;
-    }
-    if item == "minecolonies:rallybanner" {
-        let reply = with_world(|world| world.rally(actor));
-        return Held::Rally { lines: reply.lines };
-    }
-    if item != "minecolonies:supplycamp" && item != "minecolonies:supplyship" {
-        return Held::Ignore;
-    }
-    let item = if item == "minecolonies:supplyship" {
-        "minecolonies:supplyship"
-    } else {
-        "minecolonies:supplycamp"
-    };
-    let (door, rot) = match clicked {
-        Some((door, face)) => (door, rot_from_face(face, actor.yaw)),
-        None => door_ahead(actor, 5),
-    };
-    let had = with_world(|world| world.colonies_owned(actor.uuid));
-    let reply = with_world(|world| world.found_at(actor, "", door, rot));
-    let has = with_world(|world| world.colonies_owned(actor.uuid));
-    Held::Camp {
-        lines: reply.lines,
-        consume: !had && has,
-        item,
-    }
+/// Right-click with `item`. `clicked` is the face in front of the block, `block` is that block's id.
+pub fn gesture(
+    actor: &Actor,
+    item: &str,
+    clicked: Option<([i32; 3], [i32; 3])>,
+    block: Option<&str>,
+) -> Option<Gesture> {
+    with_world(|world| world.gesture(actor, item, clicked, block))
+}
+
+/// Right-click one of our citizens. `None` when the entity is not one of them.
+pub fn gesture_entity(actor: &Actor, entity: u32, item: &str) -> Option<Gesture> {
+    with_world(|world| world.gesture_entity(actor, entity, item))
 }
 
 pub fn command_usages() -> &'static [&'static str] {
@@ -411,6 +393,9 @@ pub struct World {
     pending: Vec<Intent>,
     #[serde(skip)]
     dirty: bool,
+    /// Build-tool selection, keyed by the player's id. Not part of the colony.
+    #[serde(default, skip)]
+    picks: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -537,7 +522,268 @@ impl World {
             client_hud: String::new(),
             pending: Vec::new(),
             dirty: false,
+            picks: BTreeMap::new(),
         }
+    }
+
+    pub fn gesture(
+        &mut self,
+        actor: &Actor,
+        item: &str,
+        clicked: Option<([i32; 3], [i32; 3])>,
+        block: Option<&str>,
+    ) -> Option<Gesture> {
+        if item == "minecolonies:buildtool" {
+            return Some(self.tool(actor, clicked, block));
+        }
+        if item == "minecolonies:rallybanner" {
+            let reply = self.rally(actor);
+            return Some(Gesture {
+                lines: reply.lines,
+                consume: None,
+                bar: false,
+            });
+        }
+        if item == "minecolonies:supplycamp" || item == "minecolonies:supplyship" {
+            let (door, rot) = match clicked {
+                Some((door, face)) => (door, rot_from_face(face, actor.yaw)),
+                None => door_ahead(actor, 5),
+            };
+            let had = self.colonies_owned(actor.uuid);
+            let reply = self.found_at(actor, "", door, rot);
+            let consume = (!had && self.colonies_owned(actor.uuid)).then_some(if item == "minecolonies:supplyship" {
+                "minecolonies:supplyship"
+            } else {
+                "minecolonies:supplycamp"
+            });
+            return Some(Gesture {
+                lines: reply.lines,
+                consume,
+                bar: false,
+            });
+        }
+        if let Some(kind) = kind_of_block(item) {
+            if kind == Kind::TownHall {
+                return Some(self.note(
+                    "The town hall comes with the supply camp.",
+                    "Ратуша приходит вместе с лагерем снабжения.",
+                ));
+            }
+            let (door, rot) = match clicked {
+                Some((door, face)) => (door, rot_from_face(face, actor.yaw)),
+                None => door_ahead(actor, 4),
+            };
+            return Some(self.place_hut(actor, kind, door, rot, true));
+        }
+        None
+    }
+
+    pub fn gesture_entity(&mut self, actor: &Actor, entity: u32, item: &str) -> Option<Gesture> {
+        let owns = self.colonies.iter().any(|colony| {
+            colony.owner == actor.uuid
+                && colony
+                    .citizens
+                    .iter()
+                    .any(|citizen| citizen.entity == Some(entity))
+        });
+        if !owns {
+            return None;
+        }
+        if item == "minecolonies:buildtool" {
+            let reply = self.cycle_job(actor, entity);
+            return Some(Gesture {
+                lines: reply.lines,
+                consume: None,
+                bar: true,
+            });
+        }
+        let line = self
+            .colonies
+            .iter()
+            .find(|colony| colony.owner == actor.uuid)
+            .and_then(|colony| {
+                colony
+                    .citizens
+                    .iter()
+                    .find(|citizen| citizen.entity == Some(entity))
+                    .map(|citizen| citizen_title(self.lang, citizen))
+            })
+            .unwrap_or_default();
+        Some(Gesture {
+            lines: vec![line],
+            consume: None,
+            bar: true,
+        })
+    }
+
+    fn note(&self, en: &str, ru: &str) -> Gesture {
+        Gesture {
+            lines: vec![tr(self.lang, en, ru)],
+            consume: None,
+            bar: true,
+        }
+    }
+
+    fn tool(
+        &mut self,
+        actor: &Actor,
+        clicked: Option<([i32; 3], [i32; 3])>,
+        block: Option<&str>,
+    ) -> Gesture {
+        let Some((door, face)) = clicked else {
+            return self.cycle_pick(actor);
+        };
+        if let Some(kind) = block.and_then(kind_of_block) {
+            return self.hut_menu(actor, kind);
+        }
+        let kind = self.picked(actor);
+        self.place_hut(actor, kind, door, rot_from_face(face, actor.yaw), false)
+    }
+
+    fn cycle_pick(&mut self, actor: &Actor) -> Gesture {
+        let list = placeable();
+        let key = actor.uuid.to_string();
+        let current = self.picks.get(&key).and_then(|word| parse_kind(word));
+        let next = match current.and_then(|kind| list.iter().position(|have| *have == kind)) {
+            Some(index) => list[(index + 1) % list.len()],
+            None => list[0],
+        };
+        self.picks.insert(key, kind_word(next).to_owned());
+        self.note(
+            &format!(
+                "{} . Right-click the ground to place it.",
+                kind_label(self.lang, next)
+            ),
+            &format!(
+                "{} . Правый клик по земле ставит чертёж.",
+                kind_label(self.lang, next)
+            ),
+        )
+    }
+
+    fn picked(&self, actor: &Actor) -> Kind {
+        self.picks
+            .get(&actor.uuid.to_string())
+            .and_then(|word| parse_kind(word))
+            .unwrap_or(Kind::Builder)
+    }
+
+    fn place_hut(
+        &mut self,
+        actor: &Actor,
+        kind: Kind,
+        door: [i32; 3],
+        rot: u8,
+        consume_item: bool,
+    ) -> Gesture {
+        let before = self
+            .colonies
+            .iter()
+            .find(|colony| colony.owner == actor.uuid)
+            .map(|colony| colony.buildings.len())
+            .unwrap_or(0);
+        let reply = self.build_kind(actor, kind, door, rot);
+        let after = self
+            .colonies
+            .iter()
+            .find(|colony| colony.owner == actor.uuid)
+            .map(|colony| colony.buildings.len())
+            .unwrap_or(0);
+        Gesture {
+            lines: reply.lines,
+            consume: (consume_item && after > before).then(|| hut_block(kind)),
+            bar: false,
+        }
+    }
+
+    fn hut_menu(&mut self, actor: &Actor, kind: Kind) -> Gesture {
+        let reply = match kind {
+            Kind::TownHall => {
+                self.with_colony(actor, |colony, lang| Reply::say(info_lines(colony, lang)))
+            }
+            Kind::Tavern => {
+                let waiting = self
+                    .colonies
+                    .iter()
+                    .find(|colony| colony.owner == actor.uuid)
+                    .is_some_and(|colony| !colony.visitors.is_empty());
+                if waiting {
+                    self.recruit(actor, "1")
+                } else {
+                    self.upgrade(actor, kind_word(kind))
+                }
+            }
+            Kind::University => match self.next_research(actor) {
+                Some(id) => self.research(actor, id),
+                None => self.upgrade(actor, kind_word(kind)),
+            },
+            Kind::Warehouse => {
+                let mut reply = self.upgrade(actor, kind_word(kind));
+                let stock = self.with_colony(actor, |colony, lang| Reply::say(stock_lines(colony, lang)));
+                reply.lines.extend(stock.lines);
+                reply
+            }
+            _ => self.upgrade(actor, kind_word(kind)),
+        };
+        Gesture {
+            lines: reply.lines,
+            consume: None,
+            bar: false,
+        }
+    }
+
+    fn next_research(&self, actor: &Actor) -> Option<&'static str> {
+        const ORDER: &[&str] = &[
+            "woodworking",
+            "mining",
+            "storage",
+            "logistics",
+            "watching",
+            "hospitality",
+            "milling",
+            "baking",
+            "cooking",
+            "scholarship",
+            "medicine",
+            "training",
+            "haste",
+            "drilling",
+            "far_village",
+            "plaster",
+            "rally",
+        ];
+        let colony = self.colonies.iter().find(|colony| colony.owner == actor.uuid)?;
+        ORDER
+            .iter()
+            .copied()
+            .find(|id| !colony.research.contains(*id))
+    }
+
+    fn cycle_job(&mut self, actor: &Actor, entity: u32) -> Reply {
+        let lang = self.lang;
+        let picked = self.colonies.iter().find(|colony| colony.owner == actor.uuid).map(|colony| {
+            let jobs = open_jobs(colony);
+            let citizen = colony
+                .citizens
+                .iter()
+                .find(|citizen| citizen.entity == Some(entity));
+            citizen.map(|citizen| (citizen.id, citizen.job, jobs))
+        });
+        let Some(Some((id, current, jobs))) = picked else {
+            return Reply::say(vec![tr(lang, "That is not your citizen.", "Это не ваш житель.")]);
+        };
+        let next = match jobs.iter().position(|job| *job == current) {
+            Some(index) => jobs[(index + 1) % jobs.len()],
+            None => jobs[0],
+        };
+        if next == current {
+            return Reply::say(vec![tr(
+                lang,
+                "Place a hut block first. The build tool then assigns that work.",
+                "Сначала поставьте блок хижины. Инструмент строительства потом назначит работу.",
+            )]);
+        }
+        self.hire(actor, &format!("{id} {}", job_word(next)))
     }
 
     pub fn from_json(text: &str) -> Result<Self, String> {
@@ -900,8 +1146,8 @@ impl World {
             Some(colony) => f(colony, self.lang),
             None => Reply::say(vec![tr(
                 self.lang,
-                "You have no colony. /colony found",
-                "У вас нет колонии. /colony found",
+                "You have no colony. Place a supply camp or a supply ship.",
+                "У вас нет колонии. Поставьте лагерь снабжения или корабль снабжения.",
             )]),
         }
     }
@@ -1003,8 +1249,8 @@ impl World {
         self.queue_sync(id);
         Reply::say(vec![tr(
             lang,
-            &format!("{name} is founded. The supply camp is going up. /colony build builder"),
-            &format!("{name} основана. Лагерь снабжения поднимается. /colony build builder"),
+            &format!("{name} is founded. The supply camp is going up. Craft a builder's hut, or right-click the ground with the build tool."),
+            &format!("{name} основана. Лагерь снабжения поднимается. Скрафтите хижину строителя или кликните по земле инструментом строительства."),
         )])
     }
 
@@ -1025,13 +1271,18 @@ impl World {
             )]);
         }
         let (door, rot) = door_ahead(actor, 4);
+        self.build_kind(actor, kind, door, rot)
+    }
+
+    fn build_kind(&mut self, actor: &Actor, kind: Kind, door: [i32; 3], rot: u8) -> Reply {
+        let lang = self.lang;
         let owner = actor.uuid;
         let dimension = actor.dimension.clone();
         let Some(index) = self.colonies.iter().position(|c| c.owner == owner) else {
             return Reply::say(vec![tr(
                 lang,
-                "You have no colony. /colony found",
-                "У вас нет колонии. /colony found",
+                "You have no colony. Place a supply camp or a supply ship.",
+                "У вас нет колонии. Поставьте лагерь снабжения или корабль снабжения.",
             )]);
         };
         let clock = self.clock;
@@ -1047,8 +1298,8 @@ impl World {
             if !colony.research.contains(node) {
                 return Reply::say(vec![tr(
                     lang,
-                    &format!("Research {node} first. /colony research"),
-                    &format!("Сначала исследуйте {node}. /colony research"),
+                    &format!("Research {node} first. Right-click the university with the build tool."),
+                    &format!("Сначала исследуйте {node}. Правый клик по университету инструментом строительства."),
                 )]);
             }
         }
@@ -1110,8 +1361,8 @@ impl World {
         self.queue_sync(colony_id);
         Reply::say(vec![tr(
             lang,
-            &format!("Blueprint for the {label} is placed. Hire a builder if you have not. /colony hire <id> builder"),
-            &format!("Чертёж «{label}» поставлен. Наймите строителя, если его ещё нет. /colony hire <id> builder"),
+            &format!("Blueprint for the {label} is placed. Right-click a citizen with the build tool to assign work."),
+            &format!("Чертёж «{label}» поставлен. Правый клик по жителю инструментом строительства назначает работу."),
         )])
     }
 
@@ -2549,6 +2800,95 @@ fn parse_kind(word: &str) -> Option<Kind> {
     })
 }
 
+fn kind_word(kind: Kind) -> &'static str {
+    match kind {
+        Kind::TownHall => "townhall",
+        Kind::Builder => "builder",
+        Kind::Warehouse => "warehouse",
+        Kind::Residence => "residence",
+        Kind::Farm => "farm",
+        Kind::Lumberjack => "lumberjack",
+        Kind::Miner => "miner",
+        Kind::GuardTower => "guardtower",
+        Kind::Tavern => "tavern",
+        Kind::Courier => "courier",
+        Kind::Fisher => "fisher",
+        Kind::Sawmill => "sawmill",
+        Kind::Bakery => "bakery",
+        Kind::Restaurant => "restaurant",
+        Kind::University => "university",
+        Kind::Library => "library",
+        Kind::Hospital => "hospital",
+        Kind::Barracks => "barracks",
+    }
+}
+
+fn job_word(job: Job) -> &'static str {
+    match job {
+        Job::Unemployed => "unemployed",
+        Job::Builder => "builder",
+        Job::Farmer => "farmer",
+        Job::Lumberjack => "lumberjack",
+        Job::Miner => "miner",
+        Job::Courier => "courier",
+        Job::Guard => "guard",
+        Job::Fisher => "fisher",
+        Job::Sawyer => "sawyer",
+        Job::Baker => "baker",
+        Job::Cook => "cook",
+    }
+}
+
+fn placeable() -> &'static [Kind] {
+    &[
+        Kind::Builder,
+        Kind::Warehouse,
+        Kind::Residence,
+        Kind::Farm,
+        Kind::Fisher,
+        Kind::Lumberjack,
+        Kind::Miner,
+        Kind::Sawmill,
+        Kind::Bakery,
+        Kind::Restaurant,
+        Kind::GuardTower,
+        Kind::Barracks,
+        Kind::Tavern,
+        Kind::Courier,
+        Kind::University,
+        Kind::Library,
+        Kind::Hospital,
+    ]
+}
+
+fn kind_of_block(block: &str) -> Option<Kind> {
+    let id = block.split('[').next().unwrap_or(block);
+    let mut kinds = vec![Kind::TownHall];
+    kinds.extend_from_slice(placeable());
+    kinds.into_iter().find(|kind| hut_block(*kind) == id)
+}
+
+fn open_jobs(colony: &Colony) -> Vec<Job> {
+    let mut jobs = vec![Job::Unemployed];
+    for job in [
+        Job::Builder,
+        Job::Farmer,
+        Job::Fisher,
+        Job::Lumberjack,
+        Job::Miner,
+        Job::Sawyer,
+        Job::Baker,
+        Job::Cook,
+        Job::Courier,
+        Job::Guard,
+    ] {
+        if colony.buildings.iter().any(|built| built.kind == job_kind(job)) {
+            jobs.push(job);
+        }
+    }
+    jobs
+}
+
 fn parse_job(word: &str) -> Option<Job> {
     Some(match word {
         "builder" => Job::Builder,
@@ -3528,6 +3868,68 @@ mod tests {
         assert!(saved.contains("Река"), "{saved}");
         reset_world();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hut_blocks_and_the_build_tool_replace_the_commands() {
+        let mut world = World::new();
+        let player = actor(7, 0, 0);
+        let founded = world
+            .gesture(
+                &player,
+                "minecolonies:supplycamp",
+                Some(([2, 64, 2], [0, 1, 0])),
+                Some("minecraft:grass_block"),
+            )
+            .unwrap();
+        assert_eq!(founded.consume, Some("minecolonies:supplycamp"));
+        drive(&mut world, 2_500);
+        assert!(owned(&world).citizens.iter().any(|c| c.entity.is_some()));
+        let placed = world
+            .gesture(
+                &player,
+                "minecolonies:blockhutbuilder",
+                Some(([8, 64, 8], [0, 1, 0])),
+                Some("minecraft:grass_block"),
+            )
+            .unwrap();
+        assert_eq!(placed.consume, Some("minecolonies:blockhutbuilder"));
+        assert!(owned(&world)
+            .buildings
+            .iter()
+            .any(|b| b.kind == Kind::Builder));
+        let pick = world
+            .gesture(&player, "minecolonies:buildtool", None, None)
+            .unwrap();
+        assert!(pick.bar);
+        assert!(pick.consume.is_none());
+        let entity = owned(&world).citizens[0].entity.unwrap();
+        let hired = world
+            .gesture_entity(&player, entity, "minecolonies:buildtool")
+            .unwrap();
+        assert!(
+            hired.lines[0].contains("builder") || hired.lines[0].contains("строител"),
+            "{:?}",
+            hired.lines
+        );
+        assert_eq!(
+            owned(&world)
+                .citizens
+                .iter()
+                .find(|c| c.entity == Some(entity))
+                .unwrap()
+                .job,
+            Job::Builder
+        );
+        let again = world
+            .gesture(
+                &player,
+                "minecolonies:blockhutbuilder",
+                Some(([12, 64, 12], [0, 1, 0])),
+                Some("minecraft:grass_block"),
+            )
+            .unwrap();
+        assert!(again.consume.is_none());
     }
 
     #[test]
